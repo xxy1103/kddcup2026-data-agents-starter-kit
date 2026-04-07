@@ -96,6 +96,7 @@ agent:
   api_key: YOUR_API_KEY
   max_steps: 16
   temperature: 0.0
+  enable_thinking: false
 
 run:
   output_dir: artifacts/runs
@@ -114,6 +115,7 @@ run:
 | `agent.api_key` | API key，直接从配置文件读取。 |
 | `agent.max_steps` | 单个任务允许的最大 ReAct 步数。 |
 | `agent.temperature` | 模型采样温度。 |
+| `agent.enable_thinking` | 设为 `true` 时，会向底层请求透传 `extra_body={"enable_thinking": true}`，适用于需要显式开启思考模式的兼容接口，例如部分千问端点；像 DeepSeek 这类不需要该参数的服务，保持 `false` 即可。 |
 | `run.output_dir` | 运行产物输出目录。 |
 | `run.run_id` | 可选，指定运行目录名。不传时默认使用 UTC 时间戳；必须是单个目录名，已存在会报错。 |
 | `run.max_workers` | `run-benchmark` 并行 worker 数。 |

@@ -96,6 +96,7 @@ agent:
   api_key: YOUR_API_KEY
   max_steps: 16
   temperature: 0.0
+  enable_thinking: false
 
 run:
   output_dir: artifacts/runs
@@ -114,6 +115,7 @@ Config fields:
 | `agent.api_key` | API key, read directly from the config file. |
 | `agent.max_steps` | Maximum ReAct steps per task. |
 | `agent.temperature` | Sampling temperature. |
+| `agent.enable_thinking` | When set to `true`, sends `extra_body={"enable_thinking": true}` for providers that require an explicit reasoning toggle, such as some Qwen-compatible endpoints. Leave it `false` for providers like DeepSeek that do not need this flag. |
 | `run.output_dir` | Output directory for run artifacts. |
 | `run.run_id` | Optional run directory name. Defaults to a UTC timestamp if omitted. Must be a single directory name; existing run directories are rejected. |
 | `run.max_workers` | Parallel worker count for `run-benchmark`. |

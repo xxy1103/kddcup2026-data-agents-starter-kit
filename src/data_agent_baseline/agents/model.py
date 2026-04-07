@@ -37,11 +37,13 @@ class OpenAIModelAdapter:
         api_base: str,
         api_key: str,
         temperature: float,
+        enable_thinking: bool = False,
     ) -> None:
         self.model = model
         self.api_base = api_base.rstrip("/")
         self.api_key = api_key
         self.temperature = temperature
+        self.enable_thinking = enable_thinking
 
     # 发送完整消息列表给模型，并返回第一条候选文本。
     def complete(self, messages: list[ModelMessage]) -> str:
@@ -54,10 +56,18 @@ class OpenAIModelAdapter:
         )
 
         try:
+            request_kwargs: dict[str, Any] = {
+                "model": self.model,
+                "messages": [{"role": message.role, "content": message.content} for message in messages],
+                "temperature": self.temperature,
+            }
+            # 对需要显式开启思考模式的兼容接口（如部分千问模型）透传开关；
+            # 未开启时不附带 extra_body，避免影响 DeepSeek 等默认兼容实现。
+            if self.enable_thinking:
+                request_kwargs["extra_body"] = {"enable_thinking": True}
+
             response = client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": message.role, "content": message.content} for message in messages],
-                temperature=self.temperature
+                **request_kwargs
             )
         except APIError as exc:
             raise RuntimeError(f"Model request failed: {exc}") from exc

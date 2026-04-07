@@ -33,6 +33,21 @@ class AgentConfig:
     api_key: str = ""
     max_steps: int = 16
     temperature: float = 0.0
+    enable_thinking: bool = False
+
+
+def _bool_value(raw_value: object, default_value: bool) -> bool:
+    if raw_value is None:
+        return default_value
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, str):
+        normalized = raw_value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    raise ValueError(f"Expected a boolean value, got: {raw_value!r}")
 
 
 # 运行时配置，包括输出目录、并发度和任务超时。
@@ -82,6 +97,7 @@ def load_app_config(config_path: Path) -> AppConfig:
         api_key=str(agent_payload.get("api_key", agent_defaults.api_key)),
         max_steps=int(agent_payload.get("max_steps", agent_defaults.max_steps)),
         temperature=float(agent_payload.get("temperature", agent_defaults.temperature)),
+        enable_thinking=_bool_value(agent_payload.get("enable_thinking"), agent_defaults.enable_thinking),
     )
     raw_run_id = run_payload.get("run_id")
     run_id = run_defaults.run_id

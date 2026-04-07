@@ -17,6 +17,7 @@ from rich.table import Table
 from data_agent_baseline.benchmark.dataset import DABenchPublicDataset
 from data_agent_baseline.config import load_app_config
 from data_agent_baseline.run.runner import TaskRunArtifacts, create_run_output_dir, run_benchmark, run_single_task
+from data_agent_baseline.scoring import resolve_score_run_dir, score_run_outputs
 from data_agent_baseline.tools.filesystem import list_context_tree
 
 # 约定好的项目目录入口，CLI 会基于这些路径展示状态和写出产物。
@@ -25,6 +26,7 @@ CONFIGS_DIR = PROJECT_ROOT / "configs"
 DATA_DIR = PROJECT_ROOT / "data"
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 ARTIFACT_RUNS_DIR = ARTIFACTS_DIR / "runs"
+PUBLIC_GOLD_DIR = DATA_DIR / "public" / "output"
 
 # Typer 应用入口和统一的 rich 控制台输出对象。
 app = typer.Typer(add_completion=False, no_args_is_help=False)
@@ -268,6 +270,43 @@ def run_benchmark_command(
     console.print(f"Run output: {run_output_dir}")
     console.print(f"Tasks attempted: {len(artifacts)}")
     console.print(f"Succeeded tasks: {sum(1 for item in artifacts if item.succeeded)}")
+
+
+# 对某次 run 的 prediction.csv 按官方列匹配规则打分。
+@app.command("score-run")
+def score_run_command(
+    run_id: str | None = typer.Argument(
+        None,
+        help="Optional run directory name under artifacts/runs. Latest run is used when omitted.",
+    ),
+) -> None:
+    """Score one run directory against the public demo gold.csv files."""
+    try:
+        effective_run_id, run_output_dir = resolve_score_run_dir(ARTIFACT_RUNS_DIR, run_id=run_id)
+        summary = score_run_outputs(run_output_dir=run_output_dir, gold_root=PUBLIC_GOLD_DIR)
+    except (ValueError, FileNotFoundError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="run_id") from exc
+
+    summary_table = Table(title=f"Score Summary for {effective_run_id}")
+    summary_table.add_column("Item")
+    summary_table.add_column("Value")
+    summary_table.add_row("run_id", effective_run_id)
+    summary_table.add_row("run_output", str(run_output_dir))
+    summary_table.add_row("public_gold_dir", str(PUBLIC_GOLD_DIR))
+    summary_table.add_row("task_count", str(summary.task_count))
+    summary_table.add_row("total_score", str(summary.total_score))
+    summary_table.add_row("accuracy", f"{summary.accuracy:.4f}")
+    summary_table.add_row("score_json", str(summary.score_path))
+    console.print(summary_table)
+
+    failed_tasks = [task for task in summary.tasks if task.score == 0]
+    if failed_tasks:
+        failed_table = Table(title="Incorrect Tasks")
+        failed_table.add_column("Task")
+        failed_table.add_column("Reason")
+        for task in failed_tasks:
+            failed_table.add_row(task.task_id, task.reason or "Unknown scoring failure.")
+        console.print(failed_table)
 
 
 # 供 pyproject 或脚本入口直接调用的主函数。

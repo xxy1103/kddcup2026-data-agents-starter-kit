@@ -50,6 +50,12 @@
    uv run dabench run-benchmark --config configs/react_baseline.example.yaml
    ```
 
+6. 对最新一次运行结果做公开 demo 本地评分：
+
+   ```bash
+   uv run dabench score-run
+   ```
+
 ## 数据集
 
 公开 demo 数据集默认位于 `data/public/input/`。每个任务目录结构如下：
@@ -116,7 +122,7 @@ run:
 ## CLI
 
 ```bash
-uv run dabench <command> --config PATH [options]
+uv run dabench <command> [options]
 ```
 
 | 命令 | 作用 | 示例 |
@@ -125,8 +131,10 @@ uv run dabench <command> --config PATH [options]
 | `inspect-task` | 查看任务元信息，并列出 `context/` 下可访问文件。 | `uv run dabench inspect-task task_1 --config configs/react_baseline.local.yaml` |
 | `run-task` | 对单个任务运行 baseline，并写出结果。 | `uv run dabench run-task task_1 --config configs/react_baseline.local.yaml` |
 | `run-benchmark` | 批量运行整个公开数据集。 | `uv run dabench run-benchmark --config configs/react_baseline.local.yaml` |
+| `score-run` | 对某次运行目录按公开 demo `gold.csv` 做本地评分；不传 `run_id` 时默认评分最新一次运行。 | `uv run dabench score-run 20260407T022447Z` |
 
 `run-benchmark` 还支持 `--limit N`，用于限制任务数量。
+涉及任务执行的命令需要传 `--config PATH`；`score-run` 直接读取已有产物，不需要配置文件。
 
 ## Tools
 
@@ -144,6 +152,25 @@ uv run dabench <command> --config PATH [options]
 | `answer` | 提交最终答案表格并结束当前任务。 | `columns`、`rows` |
 
 所有文件路径都必须是相对于任务 `context/` 目录的相对路径。
+
+## 评分
+
+仓库现在提供了一个面向公开 demo 的本地评分命令：
+
+```bash
+uv run dabench score-run [run_id]
+```
+
+如果不传 `run_id`，命令会默认评分 `artifacts/runs/` 下名字最新的一次运行目录。
+评分会把 `prediction.csv` 与 `data/public/output/task_<id>/gold.csv` 按官方二元列匹配规则进行比较：
+
+- 每道题只有 `0` 或 `1` 两种得分，没有部分分。
+- 评分时忽略列名。
+- 每一列按“无序值向量”比较，因此列内行顺序不影响得分。
+- 允许预测结果包含额外列。
+- 只要标准答案中的任意一列缺失，或该列的数据值不完全匹配，该题就记 `0`。
+
+这个本地评分器只适用于公开 demo 任务，因为 hidden test 不提供 `gold.csv`。
 
 ## 输出
 
@@ -164,6 +191,12 @@ artifacts/runs/<run_id>/<task_id>/
 
 ```text
 artifacts/runs/<run_id>/summary.json
+```
+
+对某次运行评分后还会生成：
+
+```text
+artifacts/runs/<run_id>/score.json
 ```
 
 ## Contact

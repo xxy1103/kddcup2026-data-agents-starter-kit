@@ -50,6 +50,12 @@ English | [中文](README.zh.md)
    uv run dabench run-benchmark --config configs/react_baseline.example.yaml
    ```
 
+6. Score the latest run against the public demo gold files:
+
+   ```bash
+   uv run dabench score-run
+   ```
+
 ## Dataset
 
 The public demo dataset lives under `data/public/input/`. Each task directory follows this structure:
@@ -116,7 +122,7 @@ Config fields:
 ## CLI
 
 ```bash
-uv run dabench <command> --config PATH [options]
+uv run dabench <command> [options]
 ```
 
 | Command | Purpose | Example |
@@ -125,8 +131,10 @@ uv run dabench <command> --config PATH [options]
 | `inspect-task` | Show task metadata and list accessible files under `context/`. | `uv run dabench inspect-task task_1 --config configs/react_baseline.local.yaml` |
 | `run-task` | Run the baseline on one task and write outputs. | `uv run dabench run-task task_1 --config configs/react_baseline.local.yaml` |
 | `run-benchmark` | Run the baseline across the public dataset. | `uv run dabench run-benchmark --config configs/react_baseline.local.yaml` |
+| `score-run` | Score one run directory against the public demo `gold.csv` files. Defaults to the latest run when `run_id` is omitted. | `uv run dabench score-run 20260407T022447Z` |
 
 `run-benchmark` also supports `--limit N` to cap the number of tasks.
+Commands that execute tasks require `--config PATH`; `score-run` reads existing artifacts and does not need a config file.
 
 ## Tools
 
@@ -144,6 +152,25 @@ The baseline exposes these tools to the model:
 | `answer` | Submit the final answer table and terminate the task. | `columns`, `rows` |
 
 All file paths passed to tools must be relative to the task `context/` directory.
+
+## Scoring
+
+The repository now includes a local scoring command for the public demo set:
+
+```bash
+uv run dabench score-run [run_id]
+```
+
+If `run_id` is omitted, the command scores the latest run directory under `artifacts/runs/`.
+The scorer compares `prediction.csv` with `data/public/output/task_<id>/gold.csv` using the official binary column-matching rule:
+
+- Each task receives only `0` or `1`.
+- Column names are ignored.
+- Each column is compared as an unordered value vector, so row order does not matter within a column.
+- Extra predicted columns are allowed.
+- A task scores `0` if any gold column is missing or its values do not match exactly.
+
+This local scorer only works for the public demo tasks because hidden test sets do not ship with `gold.csv`.
 
 ## Outputs
 
@@ -164,6 +191,12 @@ Benchmark runs also write:
 
 ```text
 artifacts/runs/<run_id>/summary.json
+```
+
+Scoring a run also writes:
+
+```text
+artifacts/runs/<run_id>/score.json
 ```
 
 ## Contact

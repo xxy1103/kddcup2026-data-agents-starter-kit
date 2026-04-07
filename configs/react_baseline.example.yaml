@@ -2,9 +2,9 @@ dataset:
   root_path: data/public/input
 
 agent:
-  model: deepseek-chat
-  api_base: https://api.deepseek.com
-  api_key: sk-67ee34ef60064182a64a04a4ce792711
+  model: qwen3.6-plus
+  api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+  api_key: sk-6f52de130a5e4e109dbadee9bd9da4ea
   max_steps: 16
   temperature: 0.0
 

@@ -5,22 +5,27 @@ from pathlib import Path
 
 import yaml
 
+# 项目根目录用于解析默认数据路径和相对配置路径。
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+# 默认公开数据集目录。
 def _default_dataset_root() -> Path:
     return PROJECT_ROOT / "data" / "public" / "input"
 
 
+# 默认运行产物目录。
 def _default_run_output_dir() -> Path:
     return PROJECT_ROOT / "artifacts" / "runs"
 
 
+# 数据集相关配置。
 @dataclass(frozen=True, slots=True)
 class DatasetConfig:
     root_path: Path = field(default_factory=_default_dataset_root)
 
 
+# Agent 相关配置，包括模型信息和 ReAct 步数。
 @dataclass(frozen=True, slots=True)
 class AgentConfig:
     model: str = "gpt-4.1-mini"
@@ -30,6 +35,7 @@ class AgentConfig:
     temperature: float = 0.0
 
 
+# 运行时配置，包括输出目录、并发度和任务超时。
 @dataclass(frozen=True, slots=True)
 class RunConfig:
     output_dir: Path = field(default_factory=_default_run_output_dir)
@@ -38,6 +44,7 @@ class RunConfig:
     task_timeout_seconds: int = 600
 
 
+# 顶层应用配置，把 dataset / agent / run 三组配置聚合在一起。
 @dataclass(frozen=True, slots=True)
 class AppConfig:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
@@ -45,6 +52,7 @@ class AppConfig:
     run: RunConfig = field(default_factory=RunConfig)
 
 
+# 把 YAML 中的路径字段解析成 Path；相对路径默认相对于项目根目录。
 def _path_value(raw_value: str | None, default_value: Path) -> Path:
     if not raw_value:
         return default_value
@@ -54,6 +62,7 @@ def _path_value(raw_value: str | None, default_value: Path) -> Path:
     return (PROJECT_ROOT / candidate).resolve()
 
 
+# 从 YAML 配置文件加载应用配置，并对缺省值和相对路径做统一处理。
 def load_app_config(config_path: Path) -> AppConfig:
     payload = yaml.safe_load(config_path.read_text()) or {}
     dataset_defaults = DatasetConfig()
@@ -78,6 +87,7 @@ def load_app_config(config_path: Path) -> AppConfig:
     run_id = run_defaults.run_id
     if raw_run_id is not None:
         normalized_run_id = str(raw_run_id).strip()
+        # 空字符串视为未指定 run_id，交由 runner 自动生成。
         run_id = normalized_run_id or None
 
     run_config = RunConfig(

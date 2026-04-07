@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 
+# task.json 中的结构化元信息。
 @dataclass(frozen=True, slots=True)
 class TaskRecord:
     task_id: str
@@ -12,17 +13,20 @@ class TaskRecord:
     question: str
 
 
+# 一个任务在文件系统上的资产位置。
 @dataclass(frozen=True, slots=True)
 class TaskAssets:
     task_dir: Path
     context_dir: Path
 
 
+# 运行时看到的完整公开任务对象，由记录信息和文件资产组成。
 @dataclass(frozen=True, slots=True)
 class PublicTask:
     record: TaskRecord
     assets: TaskAssets
 
+    # 以下属性只是把内部 record / assets 上的字段直接透出，便于调用方使用。
     @property
     def task_id(self) -> str:
         return self.record.task_id
@@ -44,11 +48,13 @@ class PublicTask:
         return self.assets.context_dir
 
 
+# 最终答案统一表示成表格结构，便于写出为 prediction.csv。
 @dataclass(frozen=True, slots=True)
 class AnswerTable:
     columns: list[str]
     rows: list[list[Any]]
 
+    # 转成普通字典，供 trace.json 序列化使用。
     def to_dict(self) -> dict[str, Any]:
         return {
             "columns": list(self.columns),

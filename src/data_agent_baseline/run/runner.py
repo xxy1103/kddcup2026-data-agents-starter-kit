@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from queue import Empty
 from time import perf_counter
 from typing import Any
 
@@ -18,6 +19,7 @@ from data_agent_baseline.config import AppConfig
 from data_agent_baseline.tools.registry import ToolRegistry, create_default_tool_registry
 
 
+# 每个任务运行结束后需要落盘保存的产物元信息。
 @dataclass(frozen=True, slots=True)
 class TaskRunArtifacts:
     task_id: str
@@ -38,10 +40,12 @@ class TaskRunArtifacts:
         }
 
 
+# 使用 UTC 时间戳作为 run_id，便于排序且不受本地时区影响。
 def create_run_id() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+# 接受显式传入的 run_id；如果没有提供则自动生成，同时禁止路径形式的输入。
 def resolve_run_id(run_id: str | None = None) -> str:
     if run_id is None:
         return create_run_id()
@@ -54,6 +58,7 @@ def resolve_run_id(run_id: str | None = None) -> str:
     return normalized
 
 
+# 为一次 benchmark 运行创建独立的输出目录，用来存放所有产物。
 def create_run_output_dir(output_root: Path, *, run_id: str | None = None) -> tuple[str, Path]:
     effective_run_id = resolve_run_id(run_id)
     run_output_dir = output_root / effective_run_id
@@ -61,6 +66,7 @@ def create_run_output_dir(output_root: Path, *, run_id: str | None = None) -> tu
     return effective_run_id, run_output_dir
 
 
+# 根据配置构造聊天模型适配器。
 def build_model_adapter(config: AppConfig):
     return OpenAIModelAdapter(
         model=config.agent.model,
@@ -70,6 +76,7 @@ def build_model_adapter(config: AppConfig):
     )
 
 
+# 供任务产物落盘复用的简单文件写入辅助函数。
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
@@ -83,6 +90,7 @@ def _write_csv(path: Path, columns: list[str], rows: list[list[Any]]) -> None:
             writer.writerow(row)
 
 
+# 统一失败结果的结构，便于后续按相同流程写出任务产物。
 def _failure_run_result_payload(task_id: str, failure_reason: str) -> dict[str, Any]:
     return {
         "task_id": task_id,
@@ -93,6 +101,7 @@ def _failure_run_result_payload(task_id: str, failure_reason: str) -> dict[str, 
     }
 
 
+# 单任务执行的核心路径：加载任务、构造 agent，并返回完整运行结果。
 def _run_single_task_core(
     *,
     task_id: str,
@@ -112,6 +121,7 @@ def _run_single_task_core(
     return run_result.to_dict()
 
 
+# 在子进程中执行单任务核心逻辑，便于父进程施加硬超时控制。
 def _run_single_task_in_subprocess(task_id: str, config: AppConfig, queue: multiprocessing.Queue[Any]) -> None:
     try:
         queue.put(
@@ -129,28 +139,33 @@ def _run_single_task_in_subprocess(task_id: str, config: AppConfig, queue: multi
         )
 
 
+# 为单任务执行增加进程级超时控制和异常退出处理。
 def _run_single_task_with_timeout(*, task_id: str, config: AppConfig) -> dict[str, Any]:
     timeout_seconds = config.run.task_timeout_seconds
     if timeout_seconds <= 0:
         return _run_single_task_core(task_id=task_id, config=config)
 
     queue: multiprocessing.Queue[Any] = multiprocessing.Queue()
+    # 子进程隔离了模型和工具执行，任务卡住时父进程可以直接终止它。
     process = multiprocessing.Process(
         target=_run_single_task_in_subprocess,
         args=(task_id, config, queue),
     )
     process.start()
-    process.join(timeout_seconds)
-
-    if process.is_alive():
-        process.terminate()
-        process.join(timeout=1.0)
+    try:
+        # 先等待子进程把结果放进队列，再回收子进程；否则在某些平台上会因为
+        # 大对象仍滞留在 Queue 管道中，导致 join() 误判为超时。
+        result = queue.get(timeout=timeout_seconds)
+    except Empty:
         if process.is_alive():
-            process.kill()
-            process.join()
-        return _failure_run_result_payload(task_id, f"Task timed out after {timeout_seconds} seconds.")
+            process.terminate()
+            process.join(timeout=1.0)
+            if process.is_alive():
+                process.kill()
+                process.join()
+            return _failure_run_result_payload(task_id, f"Task timed out after {timeout_seconds} seconds.")
 
-    if queue.empty():
+        process.join(timeout=1.0)
         exit_code = process.exitcode
         if exit_code not in (None, 0):
             return _failure_run_result_payload(
@@ -158,13 +173,26 @@ def _run_single_task_with_timeout(*, task_id: str, config: AppConfig) -> dict[st
                 f"Task exited unexpectedly with exit code {exit_code}.",
             )
         return _failure_run_result_payload(task_id, "Task exited without returning a result.")
+    finally:
+        # 父进程负责关闭自身持有的队列句柄，避免后台 feeder 线程悬挂。
+        queue.close()
+        queue.join_thread()
 
-    result = queue.get()
+    process.join(timeout=1.0)
+    if process.is_alive():
+        process.terminate()
+        process.join(timeout=1.0)
+        if process.is_alive():
+            process.kill()
+            process.join()
+        return _failure_run_result_payload(task_id, "Task returned a result but did not exit cleanly.")
+
     if result.get("ok"):
         return dict(result["run_result"])
     return _failure_run_result_payload(task_id, f"Task failed with uncaught error: {result['error']}")
 
 
+# 为每个任务写出结构化 trace；只有产生有效答案时才写 prediction.csv。
 def _write_task_outputs(task_id: str, run_output_dir: Path, run_result: dict[str, Any]) -> TaskRunArtifacts:
     task_output_dir = run_output_dir / task_id
     task_output_dir.mkdir(parents=True, exist_ok=True)
@@ -191,6 +219,7 @@ def _write_task_outputs(task_id: str, run_output_dir: Path, run_result: dict[str
     )
 
 
+# 公开的单任务运行入口，负责端到端执行并记录总耗时。
 def run_single_task(
     *,
     task_id: str,
@@ -208,6 +237,7 @@ def run_single_task(
     return _write_task_outputs(task_id, run_output_dir, run_result)
 
 
+# 运行选中的任务集合，可按需并行执行，并在最后写出本次运行的汇总信息。
 def run_benchmark(
     *,
     config: AppConfig,
@@ -226,6 +256,7 @@ def run_benchmark(
     effective_workers = config.run.max_workers
     if effective_workers < 1:
         raise ValueError("max_workers must be at least 1.")
+    # 如果外部直接传入了 model 或 tools，会复用这些实例，因此强制退回单 worker 执行。
     if model is not None or tools is not None:
         effective_workers = 1
 
@@ -233,6 +264,7 @@ def run_benchmark(
 
     task_artifacts: list[TaskRunArtifacts]
     if effective_workers == 1:
+        # 顺序执行时复用共享实例，避免每个任务重复构造模型和工具注册表。
         shared_model = model or build_model_adapter(config)
         shared_tools = tools or create_default_tool_registry()
         task_artifacts = []
@@ -248,6 +280,7 @@ def run_benchmark(
             if progress_callback is not None:
                 progress_callback(artifact)
     else:
+        # 并行执行时，每个任务各自处理超时控制与结果落盘。
         with ThreadPoolExecutor(max_workers=effective_workers) as executor:
             future_to_index = {
                 executor.submit(

@@ -2,14 +2,14 @@ dataset:
   root_path: data/public/input
 
 agent:
-  model: YOUR_MODEL_NAME
-  api_base: YOUR_API_BASE_URL
-  api_key: YOUR_API_KEY
+  model: deepseek-chat
+  api_base: https://api.deepseek.com
+  api_key: sk-67ee34ef60064182a64a04a4ce792711
   max_steps: 16
   temperature: 0.0
 
 run:
   output_dir: artifacts/runs
-  run_id: example_run_id
+  run_id: 
   max_workers: 8
   task_timeout_seconds: 600

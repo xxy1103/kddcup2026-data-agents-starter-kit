@@ -19,26 +19,31 @@ from data_agent_baseline.config import load_app_config
 from data_agent_baseline.run.runner import TaskRunArtifacts, create_run_output_dir, run_benchmark, run_single_task
 from data_agent_baseline.tools.filesystem import list_context_tree
 
+# 约定好的项目目录入口，CLI 会基于这些路径展示状态和写出产物。
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CONFIGS_DIR = PROJECT_ROOT / "configs"
 DATA_DIR = PROJECT_ROOT / "data"
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 ARTIFACT_RUNS_DIR = ARTIFACTS_DIR / "runs"
 
+# Typer 应用入口和统一的 rich 控制台输出对象。
 app = typer.Typer(add_completion=False, no_args_is_help=False)
 console = Console()
 
 
+# 将路径存在性压缩成简短的状态文案。
 def _status_value(path: Path) -> str:
     return "present" if path.exists() else "missing"
 
 
+# 以 task/min 的格式展示当前吞吐速率，便于进度条紧凑展示。
 def _format_compact_rate(completed_count: int, elapsed_seconds: float) -> str:
     if completed_count <= 0 or elapsed_seconds <= 0:
         return "rate=0.0 task/min"
     return f"rate={(completed_count / elapsed_seconds) * 60:.1f} task/min"
 
 
+# 在进度条右侧显示最近完成任务的编号和状态。
 def _format_last_task(artifact: TaskRunArtifacts | None) -> str:
     if artifact is None:
         return "last=-"
@@ -46,6 +51,7 @@ def _format_last_task(artifact: TaskRunArtifacts | None) -> str:
     return f"last={artifact.task_id} ({status})"
 
 
+# 为 rich Progress 统一构造紧凑字段，避免在多处重复拼接展示逻辑。
 def _build_compact_progress_fields(
     *,
     completed_count: int,
@@ -69,11 +75,13 @@ def _build_compact_progress_fields(
     }
 
 
+# CLI 根命令，仅用于挂载子命令。
 @app.callback()
 def cli() -> None:
     """Utilities for working with the local DABench baseline project."""
 
 
+# 查看本地项目路径、配置路径和公开数据集是否就绪。
 @app.command()
 def status(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path."),
@@ -108,6 +116,7 @@ def status(
             console.print(f"Public task counts: {rendered_counts}")
 
 
+# 查看单个任务的元信息以及 context/ 下可访问的文件。
 @app.command("inspect-task")
 def inspect_task(
     task_id: str,
@@ -130,6 +139,7 @@ def inspect_task(
     console.print(table)
 
 
+# 运行单个任务，并打印输出目录、预测文件和失败原因。
 @app.command("run-task")
 def run_task_command(
     task_id: str,
@@ -153,6 +163,7 @@ def run_task_command(
         console.print(f"Failure: {artifacts.failure_reason}")
 
 
+# 批量运行 benchmark，并用 rich 进度条显示完成情况和吞吐。
 @app.command("run-benchmark")
 def run_benchmark_command(
     config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path."),
@@ -166,6 +177,7 @@ def run_benchmark_command(
         task_total = min(task_total, limit)
     effective_workers = app_config.run.max_workers
 
+    # 进度条字段刻意做得紧凑，方便在终端中同时展示成功/失败、速度和最近任务。
     progress_columns = [
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -206,6 +218,7 @@ def run_benchmark_command(
         failed_count = 0
         start_time = perf_counter()
 
+        # 每完成一个任务就刷新一次统计信息和进度条展示。
         def on_task_complete(artifact) -> None:
             nonlocal completion_count, succeeded_count, failed_count
             completion_count += 1
@@ -257,5 +270,6 @@ def run_benchmark_command(
     console.print(f"Succeeded tasks: {sum(1 for item in artifacts if item.succeeded)}")
 
 
+# 供 pyproject 或脚本入口直接调用的主函数。
 def main() -> None:
     app()

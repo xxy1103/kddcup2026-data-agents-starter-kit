@@ -6,15 +6,18 @@ from pathlib import Path
 
 from data_agent_baseline.benchmark.schema import PublicTask, TaskAssets, TaskRecord
 
+# 公开数据集中的任务目录统一使用 task_<number> 命名。
 TASK_DIR_PREFIX = "task_"
 
 
+# 从 task_id 中提取数值部分，用于目录排序。
 def _task_number(task_id: str) -> int:
     if not task_id.startswith(TASK_DIR_PREFIX):
         raise ValueError(f"Invalid task id: {task_id}")
     return int(task_id.removeprefix(TASK_DIR_PREFIX))
 
 
+# 从 task.json 中加载任务元信息，并校验字段集合是否符合预期。
 def _load_task_record(task_json_path: Path) -> TaskRecord:
     payload = json.loads(task_json_path.read_text())
     expected_keys = {"task_id", "difficulty", "question"}
@@ -32,14 +35,17 @@ def _load_task_record(task_json_path: Path) -> TaskRecord:
     )
 
 
+# 对公开任务数据集的本地目录结构做统一封装。
 @dataclass(frozen=True, slots=True)
 class DABenchPublicDataset:
     root_dir: Path
 
+    # 数据集根目录是否存在。
     @property
     def exists(self) -> bool:
         return self.root_dir.is_dir()
 
+    # 返回所有任务目录，并按 task 编号排序。
     def task_dirs(self) -> list[Path]:
         if not self.exists:
             return []
@@ -52,9 +58,11 @@ class DABenchPublicDataset:
         task_dirs.sort(key=lambda path: _task_number(path.name))
         return task_dirs
 
+    # 仅返回任务 ID 列表，适合状态展示等轻量场景。
     def list_task_ids(self) -> list[str]:
         return [path.name for path in self.task_dirs()]
 
+    # 加载单个任务，校验 task.json 和 context/ 是否完整可用。
     def get_task(self, task_id: str) -> PublicTask:
         task_dir = self.root_dir / task_id
         task_json_path = task_dir / "task.json"
@@ -72,6 +80,7 @@ class DABenchPublicDataset:
         assets = TaskAssets(task_dir=task_dir, context_dir=context_dir)
         return PublicTask(record=record, assets=assets)
 
+    # 遍历任务，并按 task_id / difficulty 等条件做过滤。
     def iter_tasks(
         self,
         *,
@@ -94,6 +103,7 @@ class DABenchPublicDataset:
             tasks.append(task)
         return tasks
 
+    # 统计各难度下的任务数量。
     def task_counts(self) -> dict[str, int]:
         counts: dict[str, int] = {}
         for task in self.iter_tasks():

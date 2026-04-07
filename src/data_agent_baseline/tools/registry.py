@@ -14,9 +14,11 @@ from data_agent_baseline.tools.filesystem import (
 from data_agent_baseline.tools.python_exec import execute_python_code
 from data_agent_baseline.tools.sqlite import execute_read_only_sql, inspect_sqlite_schema
 
+# Python 执行工具的固定超时时间，避免模型生成的脚本长时间卡住。
 EXECUTE_PYTHON_TIMEOUT_SECONDS = 30
 
 
+# 描述单个工具的元信息，用于拼接到 prompt 里给模型看。
 @dataclass(frozen=True, slots=True)
 class ToolSpec:
     name: str
@@ -24,6 +26,7 @@ class ToolSpec:
     input_schema: dict[str, Any]
 
 
+# 统一封装工具执行结果：是否成功、返回内容，以及是否为终止动作。
 @dataclass(frozen=True, slots=True)
 class ToolExecutionResult:
     ok: bool
@@ -32,37 +35,44 @@ class ToolExecutionResult:
     answer: AnswerTable | None = None
 
 
+# 每个工具 handler 都接收当前任务和 action_input，并返回标准化结果。
 ToolHandler = Callable[[PublicTask, dict[str, Any]], ToolExecutionResult]
 
 
+# 列出当前任务 context/ 目录下可用的文件和子目录。
 def _list_context(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     max_depth = int(action_input.get("max_depth", 4))
     return ToolExecutionResult(ok=True, content=list_context_tree(task, max_depth=max_depth))
 
 
+# 读取 CSV 文件的前若干行，帮助模型先看结构和样例数据。
 def _read_csv(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     path = str(action_input["path"])
     max_rows = int(action_input.get("max_rows", 20))
     return ToolExecutionResult(ok=True, content=read_csv_preview(task, path, max_rows=max_rows))
 
 
+# 读取 JSON 文件的预览文本，适合查看结构化配置或映射关系。
 def _read_json(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     path = str(action_input["path"])
     max_chars = int(action_input.get("max_chars", 4000))
     return ToolExecutionResult(ok=True, content=read_json_preview(task, path, max_chars=max_chars))
 
 
+# 读取普通文本文档的片段，例如 markdown、说明文档等。
 def _read_doc(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     path = str(action_input["path"])
     max_chars = int(action_input.get("max_chars", 4000))
     return ToolExecutionResult(ok=True, content=read_doc_preview(task, path, max_chars=max_chars))
 
 
+# 查看 sqlite 数据库中的表结构，帮助模型先理解有哪些表和字段。
 def _inspect_sqlite_schema(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     path = resolve_context_path(task, str(action_input["path"]))
     return ToolExecutionResult(ok=True, content=inspect_sqlite_schema(path))
 
 
+# 在 context 内的 sqlite/db 文件上执行只读 SQL 查询。
 def _execute_context_sql(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     path = resolve_context_path(task, str(action_input["path"]))
     sql = str(action_input["sql"])
@@ -70,6 +80,7 @@ def _execute_context_sql(task: PublicTask, action_input: dict[str, Any]) -> Tool
     return ToolExecutionResult(ok=True, content=execute_read_only_sql(path, sql, limit=limit))
 
 
+# 在任务 context 目录下执行一段 Python 代码，并返回 stdout / stderr 等信息。
 def _execute_python(task: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     code = str(action_input["code"])
     content = execute_python_code(
@@ -77,9 +88,11 @@ def _execute_python(task: PublicTask, action_input: dict[str, Any]) -> ToolExecu
         code=code,
         timeout_seconds=EXECUTE_PYTHON_TIMEOUT_SECONDS,
     )
+    # success 字段来自底层执行器，用它映射成统一的 ok 标记。
     return ToolExecutionResult(ok=bool(content.get("success")), content=content)
 
 
+# 校验并提交最终答案表；这是唯一合法的终止型工具。
 def _answer(_: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     columns = action_input.get("columns")
     rows = action_input.get("rows")
@@ -90,6 +103,7 @@ def _answer(_: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
 
     normalized_rows: list[list[Any]] = []
     for row in rows:
+        # 每一行都必须是列表，且列数必须和 columns 一致。
         if not isinstance(row, list):
             raise ValueError("Each answer row must be a list.")
         if len(row) != len(columns):
@@ -109,11 +123,13 @@ def _answer(_: PublicTask, action_input: dict[str, Any]) -> ToolExecutionResult:
     )
 
 
+# 工具注册表同时维护“给模型看的工具定义”和“实际执行用的 handler”映射。
 @dataclass(slots=True)
 class ToolRegistry:
     specs: dict[str, ToolSpec]
     handlers: dict[str, ToolHandler]
 
+    # 把工具定义渲染成 prompt 友好的文本，供 system prompt 拼接使用。
     def describe_for_prompt(self) -> str:
         lines = []
         for name in sorted(self.specs):
@@ -122,12 +138,14 @@ class ToolRegistry:
             lines.append(f"  input_schema: {spec.input_schema}")
         return "\n".join(lines)
 
+    # 按工具名分发执行；若模型输出了未知工具名，则直接报错。
     def execute(self, task: PublicTask, action: str, action_input: dict[str, Any]) -> ToolExecutionResult:
         if action not in self.handlers:
             raise KeyError(f"Unknown tool: {action}")
         return self.handlers[action](task, action_input)
 
 
+# 构造 baseline 默认可用的整套工具集合及其元信息。
 def create_default_tool_registry() -> ToolRegistry:
     specs = {
         "answer": ToolSpec(
@@ -180,6 +198,7 @@ def create_default_tool_registry() -> ToolRegistry:
             input_schema={"path": "relative/path/to/file.json", "max_chars": 4000},
         ),
     }
+    # specs 负责描述，handlers 负责执行；两者通过同名 key 对齐。
     handlers = {
         "answer": _answer,
         "execute_context_sql": _execute_context_sql,

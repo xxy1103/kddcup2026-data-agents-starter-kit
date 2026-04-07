@@ -6,12 +6,14 @@ from typing import Any, Protocol
 from openai import APIError, OpenAI
 
 
+# 聊天模型所需的最小消息结构。
 @dataclass(frozen=True, slots=True)
 class ModelMessage:
     role: str
     content: str
 
 
+# 模型单步输出解析后的结构化结果。
 @dataclass(frozen=True, slots=True)
 class ModelStep:
     thought: str
@@ -20,11 +22,13 @@ class ModelStep:
     raw_response: str
 
 
+# 模型适配器协议，便于替换不同后端或测试桩实现。
 class ModelAdapter(Protocol):
     def complete(self, messages: list[ModelMessage]) -> str:
         raise NotImplementedError
 
 
+# 基于 OpenAI 兼容接口的模型适配器。
 class OpenAIModelAdapter:
     def __init__(
         self,
@@ -39,6 +43,7 @@ class OpenAIModelAdapter:
         self.api_key = api_key
         self.temperature = temperature
 
+    # 发送完整消息列表给模型，并返回第一条候选文本。
     def complete(self, messages: list[ModelMessage]) -> str:
         if not self.api_key:
             raise RuntimeError("Missing model API key in config.agent.api_key.")
@@ -66,11 +71,13 @@ class OpenAIModelAdapter:
         return content
 
 
+# 用于测试的脚本化模型适配器，按预设顺序逐条返回响应。
 class ScriptedModelAdapter:
     def __init__(self, responses: list[str]) -> None:
         self._responses = list(responses)
 
     def complete(self, messages: list[ModelMessage]) -> str:
+        # 这里不依赖真实上下文，只消费预先写好的响应脚本。
         del messages
         if not self._responses:
             raise RuntimeError("No scripted model responses remaining.")

@@ -7,6 +7,7 @@ from pathlib import Path
 from data_agent_baseline.benchmark.schema import PublicTask
 
 
+# 解析 context/ 下的相对路径，并阻止路径逃逸到任务目录之外。
 def resolve_context_path(task: PublicTask, relative_path: str) -> Path:
     candidate = (task.context_dir / relative_path).resolve()
     context_root = task.context_dir.resolve()
@@ -17,9 +18,11 @@ def resolve_context_path(task: PublicTask, relative_path: str) -> Path:
     return candidate
 
 
+# 递归列出 context/ 目录树，用于让模型先了解有哪些可用资产。
 def list_context_tree(task: PublicTask, *, max_depth: int = 4) -> dict[str, object]:
     entries: list[dict[str, object]] = []
 
+    # 递归遍历目录，并记录相对路径、类型和文件大小。
     def walk(path: Path, depth: int) -> None:
         if depth > max_depth:
             return
@@ -42,6 +45,7 @@ def list_context_tree(task: PublicTask, *, max_depth: int = 4) -> dict[str, obje
     }
 
 
+# 读取 CSV 文件预览，只返回有限行数，避免把大文件一次性喂给模型。
 def read_csv_preview(task: PublicTask, relative_path: str, *, max_rows: int = 20) -> dict[str, object]:
     path = resolve_context_path(task, relative_path)
     with path.open(newline="") as handle:
@@ -66,6 +70,7 @@ def read_csv_preview(task: PublicTask, relative_path: str, *, max_rows: int = 20
     }
 
 
+# 读取 JSON 文件并格式化成预览文本，必要时截断。
 def read_json_preview(task: PublicTask, relative_path: str, *, max_chars: int = 4000) -> dict[str, object]:
     path = resolve_context_path(task, relative_path)
     payload = json.loads(path.read_text())
@@ -77,6 +82,7 @@ def read_json_preview(task: PublicTask, relative_path: str, *, max_chars: int = 
     }
 
 
+# 读取普通文本文件的片段，适合 markdown、txt 等说明文档。
 def read_doc_preview(task: PublicTask, relative_path: str, *, max_chars: int = 4000) -> dict[str, object]:
     path = resolve_context_path(task, relative_path)
     text = path.read_text(errors="replace")

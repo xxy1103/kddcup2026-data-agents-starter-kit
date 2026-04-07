@@ -8,9 +8,11 @@ import sys
 import tempfile
 import traceback
 from pathlib import Path
+from queue import Empty
 from typing import Any
 
 
+# 临时重定向子进程的 stdout / stderr，到文件中进行捕获。
 @contextlib.contextmanager
 def _capture_process_streams(stdout_path: Path, stderr_path: Path):
     original_stdout = sys.stdout
@@ -47,6 +49,7 @@ def _capture_process_streams(stdout_path: Path, stderr_path: Path):
             )
             yield
         finally:
+            # 退出时恢复原始标准流，避免影响宿主进程。
             if sys.stdout is not None:
                 sys.stdout.flush()
             if sys.stderr is not None:
@@ -65,10 +68,12 @@ def _capture_process_streams(stdout_path: Path, stderr_path: Path):
             os.close(saved_stderr_fd)
 
 
+# 读取捕获文件中的内容，统一按 utf-8 容错解码。
 def _read_captured_stream(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+# 真正执行 Python 代码的子进程入口。
 def _run_python_code(
     context_root: str,
     code: str,
@@ -76,6 +81,7 @@ def _run_python_code(
     stderr_path: str,
     queue: multiprocessing.Queue[Any],
 ) -> None:
+    # 向执行环境暴露最小上下文：内置对象、context_root 和 Path。
     namespace: dict[str, Any] = {
         "__builtins__": __builtins__,
         "__name__": "__main__",
@@ -86,6 +92,7 @@ def _run_python_code(
     resolved_stderr_path = Path(stderr_path)
 
     try:
+        # 将工作目录切到任务 context，方便模型直接使用相对路径。
         os.chdir(context_root)
         with _capture_process_streams(resolved_stdout_path, resolved_stderr_path):
             exec(code, namespace, namespace)
@@ -100,6 +107,7 @@ def _run_python_code(
         )
 
 
+# 公开的 Python 执行入口：在独立进程中运行代码，并收集输出、错误和超时信息。
 def execute_python_code(context_root: Path, code: str, *, timeout_seconds: int = 30) -> dict[str, Any]:
     resolved_context_root = context_root.resolve()
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -120,27 +128,48 @@ def execute_python_code(context_root: Path, code: str, *, timeout_seconds: int =
             ),
         )
         process.start()
-        process.join(timeout_seconds)
+        try:
+            result = queue.get(timeout=timeout_seconds)
+        except Empty:
+            if process.is_alive():
+                process.terminate()
+                process.join(timeout=1.0)
+                if process.is_alive():
+                    process.kill()
+                    process.join()
+                return {
+                    "success": False,
+                    "output": _read_captured_stream(stdout_path),
+                    "stderr": _read_captured_stream(stderr_path),
+                    "error": f"Python execution timed out after {timeout_seconds} seconds.",
+                }
 
-        if process.is_alive():
-            process.terminate()
-            process.join()
-            return {
-                "success": False,
-                "output": _read_captured_stream(stdout_path),
-                "stderr": _read_captured_stream(stderr_path),
-                "error": f"Python execution timed out after {timeout_seconds} seconds.",
-            }
-
-        if queue.empty():
+            process.join(timeout=1.0)
             return {
                 "success": False,
                 "output": _read_captured_stream(stdout_path),
                 "stderr": _read_captured_stream(stderr_path),
                 "error": "Python execution exited without returning a result.",
             }
+        finally:
+            queue.close()
+            queue.join_thread()
 
-        result = queue.get()
+        process.join(timeout=1.0)
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=1.0)
+            if process.is_alive():
+                process.kill()
+                process.join()
+            return {
+                "success": False,
+                "output": _read_captured_stream(stdout_path),
+                "stderr": _read_captured_stream(stderr_path),
+                "error": "Python execution returned a result but did not exit cleanly.",
+            }
+
+        # 无论成功失败，都把 stdout / stderr 附回结果，方便 trace 复盘。
         result["output"] = _read_captured_stream(stdout_path)
         result["stderr"] = _read_captured_stream(stderr_path)
         return result

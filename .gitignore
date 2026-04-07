@@ -31,7 +31,7 @@ artifacts/*
 !artifacts/.gitkeep
 
 # Local configs
-configs/*
+configs/
 
 # OS / notebook noise
 .DS_Store

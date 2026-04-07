@@ -36,19 +36,28 @@ class OpenAIModelAdapter:
         model: str,
         api_base: str,
         api_key: str,
+        api_key_env: str | None = None,
         temperature: float,
         enable_thinking: bool = False,
     ) -> None:
         self.model = model
         self.api_base = api_base.rstrip("/")
         self.api_key = api_key
+        self.api_key_env = api_key_env
         self.temperature = temperature
         self.enable_thinking = enable_thinking
 
     # 发送完整消息列表给模型，并返回第一条候选文本。
     def complete(self, messages: list[ModelMessage]) -> str:
         if not self.api_key:
-            raise RuntimeError("Missing model API key in config.agent.api_key.")
+            if self.api_key_env:
+                raise RuntimeError(
+                    f"Missing model API key. Checked config.agent.api_key_env={self.api_key_env!r}."
+                )
+            raise RuntimeError(
+                "Missing model API key in config.agent.api_key or the environment variable named by "
+                "config.agent.api_key_env."
+            )
 
         client = OpenAI(
             api_key=self.api_key,

@@ -94,6 +94,7 @@ agent:
   model: YOUR_MODEL_NAME
   api_base: YOUR_API_BASE_URL
   api_key: YOUR_API_KEY
+  api_key_env:
   max_steps: 16
   temperature: 0.0
   enable_thinking: false
@@ -113,6 +114,7 @@ Config fields:
 | `agent.model` | Model name. |
 | `agent.api_base` | OpenAI-compatible API base URL. |
 | `agent.api_key` | API key, read directly from the config file. |
+| `agent.api_key_env` | Optional environment variable name for the API key. When `agent.api_key` is empty, the loader reads the key from this environment variable instead. |
 | `agent.max_steps` | Maximum ReAct steps per task. |
 | `agent.temperature` | Sampling temperature. |
 | `agent.enable_thinking` | When set to `true`, sends `extra_body={"enable_thinking": true}` for providers that require an explicit reasoning toggle, such as some Qwen-compatible endpoints. Leave it `false` for providers like DeepSeek that do not need this flag. |
@@ -137,6 +139,18 @@ uv run dabench <command> [options]
 
 `run-benchmark` also supports `--limit N` to cap the number of tasks.
 Commands that execute tasks require `--config PATH`; `score-run` reads existing artifacts and does not need a config file.
+
+To avoid storing secrets in YAML, you can leave `agent.api_key` empty and configure `agent.api_key_env` instead. Example:
+
+```yaml
+agent:
+  model: deepseek-chat
+  api_base: https://api.deepseek.com
+  api_key: ""
+  api_key_env: DEEPSEEK_API_KEY
+  max_steps: 16
+  temperature: 0.0
+```
 
 ## Tools
 

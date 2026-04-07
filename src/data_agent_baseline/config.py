@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -31,9 +32,17 @@ class AgentConfig:
     model: str = "gpt-4.1-mini"
     api_base: str = "https://api.openai.com/v1"
     api_key: str = ""
+    api_key_env: str | None = None
     max_steps: int = 16
     temperature: float = 0.0
     enable_thinking: bool = False
+
+
+def _optional_string_value(raw_value: object) -> str | None:
+    if raw_value is None:
+        return None
+    normalized = str(raw_value).strip()
+    return normalized or None
 
 
 def _bool_value(raw_value: object, default_value: bool) -> bool:
@@ -48,6 +57,16 @@ def _bool_value(raw_value: object, default_value: bool) -> bool:
         if normalized in {"0", "false", "no", "off"}:
             return False
     raise ValueError(f"Expected a boolean value, got: {raw_value!r}")
+
+
+def _resolve_api_key(raw_api_key: object, raw_api_key_env: object, default_api_key: str) -> tuple[str, str | None]:
+    api_key = str(raw_api_key if raw_api_key is not None else default_api_key).strip()
+    api_key_env = _optional_string_value(raw_api_key_env)
+    if api_key or api_key_env is None:
+        return api_key, api_key_env
+
+    env_api_key = os.getenv(api_key_env, "").strip()
+    return env_api_key, api_key_env
 
 
 # 运行时配置，包括输出目录、并发度和任务超时。
@@ -91,10 +110,16 @@ def load_app_config(config_path: Path) -> AppConfig:
     dataset_config = DatasetConfig(
         root_path=_path_value(dataset_payload.get("root_path"), dataset_defaults.root_path),
     )
+    api_key, api_key_env = _resolve_api_key(
+        agent_payload.get("api_key", agent_defaults.api_key),
+        agent_payload.get("api_key_env"),
+        agent_defaults.api_key,
+    )
     agent_config = AgentConfig(
         model=str(agent_payload.get("model", agent_defaults.model)),
         api_base=str(agent_payload.get("api_base", agent_defaults.api_base)),
-        api_key=str(agent_payload.get("api_key", agent_defaults.api_key)),
+        api_key=api_key,
+        api_key_env=api_key_env,
         max_steps=int(agent_payload.get("max_steps", agent_defaults.max_steps)),
         temperature=float(agent_payload.get("temperature", agent_defaults.temperature)),
         enable_thinking=_bool_value(agent_payload.get("enable_thinking"), agent_defaults.enable_thinking),

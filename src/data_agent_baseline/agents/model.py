@@ -52,11 +52,11 @@ class OpenAIModelAdapter:
         if not self.api_key:
             if self.api_key_env:
                 raise RuntimeError(
-                    f"Missing model API key. Checked config.agent.api_key_env={self.api_key_env!r}."
+                    f"Missing model API key. Checked project .env for config.agent.api_key_env={self.api_key_env!r}."
                 )
             raise RuntimeError(
-                "Missing model API key in config.agent.api_key or the environment variable named by "
-                "config.agent.api_key_env."
+                "Missing model API key in config.agent.api_key or the project .env file. "
+                "Set config.agent.api_key directly or point config.agent.api_key_env at a key in .env."
             )
 
         client = OpenAI(

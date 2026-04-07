@@ -14,42 +14,39 @@
 
 ## Overview
 
-| 项目 | 内容 |
-| --- | --- |
-| 数据输入 | `data/public/input/` |
-| 公开 demo 标准答案 | `data/public/output/task_<id>/gold.csv` |
-| hidden test 数据 | 仅提供 `input/`，不提供 `output/` |
-| 入口命令 | `uv run dabench <command> --config PATH` |
-| 默认输出目录 | `artifacts/runs/` |
+| 项目               | 内容                                       |
+| ------------------ | ------------------------------------------ |
+| 数据输入           | `data/public/input/`                     |
+| 公开 demo 标准答案 | `data/public/output/task_<id>/gold.csv`  |
+| hidden test 数据   | 仅提供 `input/`，不提供 `output/`      |
+| 入口命令           | `uv run dabench <command> --config PATH` |
+| 默认输出目录       | `artifacts/runs/`                        |
 
 ## 快速开始
 
 1. 请先按照 `uv` 官方安装指南安装 `uv`：
+
    - https://docs.astral.sh/uv/getting-started/installation/
 2. 在 macOS 和 Linux 上，官方独立安装命令为：
 
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-
 3. 安装项目依赖：
 
    ```bash
    uv sync
    ```
-
 4. 检查数据集根目录是否可见：
 
    ```bash
    uv run dabench status --config configs/react_baseline.example.yaml
    ```
-
 5. 运行 baseline：
 
    ```bash
    uv run dabench run-benchmark --config configs/react_baseline.example.yaml
    ```
-
 6. 对最新一次运行结果做公开 demo 本地评分：
 
    ```bash
@@ -93,7 +90,8 @@ dataset:
 agent:
   model: YOUR_MODEL_NAME
   api_base: YOUR_API_BASE_URL
-  api_key: YOUR_API_KEY
+  api_key: ""
+  api_key_env: YOUR_API_KEY_NAME
   max_steps: 16
   temperature: 0.0
   enable_thinking: false
@@ -107,19 +105,20 @@ run:
 
 配置字段说明：
 
-| 字段 | 含义 |
-| --- | --- |
-| `dataset.root_path` | 公开 demo `input/` 数据集根目录。相对路径按项目根目录解析。 |
-| `agent.model` | 模型名称。 |
-| `agent.api_base` | OpenAI-compatible 接口根地址。 |
-| `agent.api_key` | API key，直接从配置文件读取。 |
-| `agent.max_steps` | 单个任务允许的最大 ReAct 步数。 |
-| `agent.temperature` | 模型采样温度。 |
-| `agent.enable_thinking` | 设为 `true` 时，会向底层请求透传 `extra_body={"enable_thinking": true}`，适用于需要显式开启思考模式的兼容接口，例如部分千问端点；像 DeepSeek 这类不需要该参数的服务，保持 `false` 即可。 |
-| `run.output_dir` | 运行产物输出目录。 |
-| `run.run_id` | 可选，指定运行目录名。不传时默认使用 UTC 时间戳；必须是单个目录名，已存在会报错。 |
-| `run.max_workers` | `run-benchmark` 并行 worker 数。 |
-| `run.task_timeout_seconds` | 单个任务允许的最长墙钟时间。设为 `0` 或负数可关闭任务级超时。 |
+| 字段                         | 含义                                                                                                                                                                                           |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dataset.root_path`        | 公开 demo `input/` 数据集根目录。相对路径按项目根目录解析。                                                                                                                                  |
+| `agent.model`              | 模型名称。                                                                                                                                                                                     |
+| `agent.api_base`           | OpenAI-compatible 接口根地址。                                                                                                                                                                 |
+| `agent.api_key`            | API key，直接从配置文件读取。使用 `.env` 时留空。                                                                                                                                            |
+| `agent.api_key_env`        | 项目根目录 `.env` 中的 API key 变量名。加载器会从 `.env` 读取该变量值。                                                                                                                     |
+| `agent.max_steps`          | 单个任务允许的最大 ReAct 步数。                                                                                                                                                                |
+| `agent.temperature`        | 模型采样温度。                                                                                                                                                                                 |
+| `agent.enable_thinking`    | 设为 `true` 时，会向底层请求透传 `extra_body={"enable_thinking": true}`，适用于需要显式开启思考模式的兼容接口，例如部分千问端点；像 DeepSeek 这类不需要该参数的服务，保持 `false` 即可。 |
+| `run.output_dir`           | 运行产物输出目录。                                                                                                                                                                             |
+| `run.run_id`               | 可选，指定运行目录名。不传时默认使用 UTC 时间戳；必须是单个目录名，已存在会报错。                                                                                                              |
+| `run.max_workers`          | `run-benchmark` 并行 worker 数。                                                                                                                                                             |
+| `run.task_timeout_seconds` | 单个任务允许的最长墙钟时间。设为 `0` 或负数可关闭任务级超时。                                                                                                                                |
 
 ## CLI
 
@@ -127,31 +126,45 @@ run:
 uv run dabench <command> [options]
 ```
 
-| 命令 | 作用 | 示例 |
-| --- | --- | --- |
-| `status` | 查看项目路径、配置路径、数据集根目录和公开任务数量。 | `uv run dabench status --config configs/react_baseline.example.yaml` |
-| `inspect-task` | 查看任务元信息，并列出 `context/` 下可访问文件。 | `uv run dabench inspect-task task_1 --config configs/react_baseline.local.yaml` |
-| `run-task` | 对单个任务运行 baseline，并写出结果。 | `uv run dabench run-task task_1 --config configs/react_baseline.local.yaml` |
-| `run-benchmark` | 批量运行整个公开数据集。 | `uv run dabench run-benchmark --config configs/react_baseline.local.yaml` |
-| `score-run` | 对某次运行目录按公开 demo `gold.csv` 做本地评分；不传 `run_id` 时默认评分最新一次运行。 | `uv run dabench score-run 20260407T022447Z` |
+| 命令              | 作用                                                                                        | 示例                                                                              |
+| ----------------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `status`        | 查看项目路径、配置路径、数据集根目录和公开任务数量。                                        | `uv run dabench status --config configs/react_baseline.example.yaml`            |
+| `inspect-task`  | 查看任务元信息，并列出 `context/` 下可访问文件。                                          | `uv run dabench inspect-task task_1 --config configs/react_baseline.example.yaml` |
+| `run-task`      | 对单个任务运行 baseline，并写出结果。                                                       | `uv run dabench run-task task_1 --config configs/react_baseline.example.yaml`     |
+| `run-benchmark` | 批量运行整个公开数据集。                                                                    | `uv run dabench run-benchmark --config configs/react_baseline.example.yaml`       |
+| `score-run`     | 对某次运行目录按公开 demo `gold.csv` 做本地评分；不传 `run_id` 时默认评分最新一次运行。 | `uv run dabench score-run 20260407T022447Z`                                     |
 
 `run-benchmark` 还支持 `--limit N`，用于限制任务数量。
 涉及任务执行的命令需要传 `--config PATH`；`score-run` 直接读取已有产物，不需要配置文件。
+
+如果你想把密钥放在 `.env` 中，可以在项目根目录创建 `.env`，并在配置里写入对应变量名。例如：
+
+```yaml
+agent:
+  model: deepseek-chat
+  api_base: https://api.deepseek.com
+  api_key: ""
+  api_key_env: DEEPSEEK_API_KEY
+  max_steps: 16
+  temperature: 0.0
+```
+
+然后在项目根目录 `.env` 中写入 `DEEPSEEK_API_KEY=...`。
 
 ## Tools
 
 当前暴露给模型的工具有：
 
-| 工具 | 作用 | 输入 |
-| --- | --- | --- |
-| `list_context` | 列出 `context/` 下的文件和目录。 | `max_depth` |
-| `read_csv` | 读取 CSV 预览。 | `path`、`max_rows` |
-| `read_json` | 读取 JSON 预览。 | `path`、`max_chars` |
-| `read_doc` | 读取文本文档预览。 | `path`、`max_chars` |
-| `inspect_sqlite_schema` | 查看 SQLite / DB 文件中的表结构。 | `path` |
-| `execute_context_sql` | 对 `context/` 内 SQLite / DB 文件执行只读 SQL。 | `path`、`sql`、`limit` |
-| `execute_python` | 在任务 `context/` 目录内执行任意 Python 代码。 | `code` |
-| `answer` | 提交最终答案表格并结束当前任务。 | `columns`、`rows` |
+| 工具                      | 作用                                              | 输入                         |
+| ------------------------- | ------------------------------------------------- | ---------------------------- |
+| `list_context`          | 列出 `context/` 下的文件和目录。                | `max_depth`                |
+| `read_csv`              | 读取 CSV 预览。                                   | `path`、`max_rows`       |
+| `read_json`             | 读取 JSON 预览。                                  | `path`、`max_chars`      |
+| `read_doc`              | 读取文本文档预览。                                | `path`、`max_chars`      |
+| `inspect_sqlite_schema` | 查看 SQLite / DB 文件中的表结构。                 | `path`                     |
+| `execute_context_sql`   | 对 `context/` 内 SQLite / DB 文件执行只读 SQL。 | `path`、`sql`、`limit` |
+| `execute_python`        | 在任务 `context/` 目录内执行任意 Python 代码。  | `code`                     |
+| `answer`                | 提交最终答案表格并结束当前任务。                  | `columns`、`rows`        |
 
 所有文件路径都必须是相对于任务 `context/` 目录的相对路径。
 
@@ -248,13 +261,13 @@ artifacts/runs/<run_id>/score.json
 
 ## 主要模块
 
-| 模块 | 责任 |
-| --- | --- |
-| `src/data_agent_baseline/benchmark/dataset.py` | 公开数据集加载器 |
-| `src/data_agent_baseline/tools/filesystem.py` | `list_context`、`read_csv`、`read_json`、`read_doc` |
-| `src/data_agent_baseline/tools/python_exec.py` | `execute_python` |
-| `src/data_agent_baseline/tools/sqlite.py` | `inspect_sqlite_schema`、`execute_context_sql` |
-| `src/data_agent_baseline/tools/registry.py` | 工具注册与终止型 `answer` |
-| `src/data_agent_baseline/agents/prompt.py` | system prompt、task prompt、observation prompt |
-| `src/data_agent_baseline/agents/react.py` | 基于 JSON action 协议的 ReAct runtime |
-| `src/data_agent_baseline/run/runner.py` | 单任务和批量运行逻辑 |
+| 模块                                             | 责任                                                        |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| `src/data_agent_baseline/benchmark/dataset.py` | 公开数据集加载器                                            |
+| `src/data_agent_baseline/tools/filesystem.py`  | `list_context`、`read_csv`、`read_json`、`read_doc` |
+| `src/data_agent_baseline/tools/python_exec.py` | `execute_python`                                          |
+| `src/data_agent_baseline/tools/sqlite.py`      | `inspect_sqlite_schema`、`execute_context_sql`          |
+| `src/data_agent_baseline/tools/registry.py`    | 工具注册与终止型 `answer`                                 |
+| `src/data_agent_baseline/agents/prompt.py`     | system prompt、task prompt、observation prompt              |
+| `src/data_agent_baseline/agents/react.py`      | 基于 JSON action 协议的 ReAct runtime                       |
+| `src/data_agent_baseline/run/runner.py`        | 单任务和批量运行逻辑                                        |

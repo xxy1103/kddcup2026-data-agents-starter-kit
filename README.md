@@ -14,42 +14,39 @@ English | [中文](README.zh.md)
 
 ## Overview
 
-| Item | Value |
-| --- | --- |
-| Dataset input | `data/public/input/` |
-| Public demo ground truth | `data/public/output/task_<id>/gold.csv` |
-| Hidden test data | `input/` only, no `output/` |
-| Entry command | `uv run dabench <command> --config PATH` |
-| Default run output | `artifacts/runs/` |
+| Item                     | Value                                      |
+| ------------------------ | ------------------------------------------ |
+| Dataset input            | `data/public/input/`                     |
+| Public demo ground truth | `data/public/output/task_<id>/gold.csv`  |
+| Hidden test data         | `input/` only, no `output/`            |
+| Entry command            | `uv run dabench <command> --config PATH` |
+| Default run output       | `artifacts/runs/`                        |
 
 ## Quick Start
 
 1. Install `uv` by following the official guide:
+
    - https://docs.astral.sh/uv/getting-started/installation/
 2. On macOS and Linux, the standalone installer is:
 
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
-
 3. Install project dependencies:
 
    ```bash
    uv sync
    ```
-
 4. Confirm the dataset root is visible:
 
    ```bash
    uv run dabench status --config configs/react_baseline.example.yaml
    ```
-
 5. Run the baseline:
 
    ```bash
    uv run dabench run-benchmark --config configs/react_baseline.example.yaml
    ```
-
 6. Score the latest run against the public demo gold files:
 
    ```bash
@@ -93,8 +90,8 @@ dataset:
 agent:
   model: YOUR_MODEL_NAME
   api_base: YOUR_API_BASE_URL
-  api_key: YOUR_API_KEY
-  api_key_env:
+  api_key: ""
+  api_key_env: YOUR_API_KEY_NAME
   max_steps: 16
   temperature: 0.0
   enable_thinking: false
@@ -108,20 +105,20 @@ run:
 
 Config fields:
 
-| Field | Meaning |
-| --- | --- |
-| `dataset.root_path` | Root directory of the public demo `input/` dataset. Relative paths are resolved from the project root. |
-| `agent.model` | Model name. |
-| `agent.api_base` | OpenAI-compatible API base URL. |
-| `agent.api_key` | API key, read directly from the config file. |
-| `agent.api_key_env` | Optional environment variable name for the API key. When `agent.api_key` is empty, the loader reads the key from this environment variable instead. |
-| `agent.max_steps` | Maximum ReAct steps per task. |
-| `agent.temperature` | Sampling temperature. |
-| `agent.enable_thinking` | When set to `true`, sends `extra_body={"enable_thinking": true}` for providers that require an explicit reasoning toggle, such as some Qwen-compatible endpoints. Leave it `false` for providers like DeepSeek that do not need this flag. |
-| `run.output_dir` | Output directory for run artifacts. |
-| `run.run_id` | Optional run directory name. Defaults to a UTC timestamp if omitted. Must be a single directory name; existing run directories are rejected. |
-| `run.max_workers` | Parallel worker count for `run-benchmark`. |
-| `run.task_timeout_seconds` | Maximum wall-clock time per task. Set to `0` or a negative value to disable the task-level timeout. |
+| Field                        | Meaning                                                                                                                                                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `dataset.root_path`        | Root directory of the public demo `input/` dataset. Relative paths are resolved from the project root.                                                                                                                                         |
+| `agent.model`              | Model name.                                                                                                                                                                                                                                      |
+| `agent.api_base`           | OpenAI-compatible API base URL.                                                                                                                                                                                                                  |
+| `agent.api_key`            | API key, read directly from the config file. Leave empty when using `.env`.                                                                                                                                                                     |
+| `agent.api_key_env`        | Name of the API key variable inside the project root `.env` file. The loader reads this value from `.env`.                                                                                                                                    |
+| `agent.max_steps`          | Maximum ReAct steps per task.                                                                                                                                                                                                                    |
+| `agent.temperature`        | Sampling temperature.                                                                                                                                                                                                                            |
+| `agent.enable_thinking`    | When set to `true`, sends `extra_body={"enable_thinking": true}` for providers that require an explicit reasoning toggle, such as some Qwen-compatible endpoints. Leave it `false` for providers like DeepSeek that do not need this flag. |
+| `run.output_dir`           | Output directory for run artifacts.                                                                                                                                                                                                              |
+| `run.run_id`               | Optional run directory name. Defaults to a UTC timestamp if omitted. Must be a single directory name; existing run directories are rejected.                                                                                                     |
+| `run.max_workers`          | Parallel worker count for `run-benchmark`.                                                                                                                                                                                                     |
+| `run.task_timeout_seconds` | Maximum wall-clock time per task. Set to `0` or a negative value to disable the task-level timeout.                                                                                                                                            |
 
 ## CLI
 
@@ -129,18 +126,18 @@ Config fields:
 uv run dabench <command> [options]
 ```
 
-| Command | Purpose | Example |
-| --- | --- | --- |
-| `status` | Show project paths, config path, dataset root, and public task counts. | `uv run dabench status --config configs/react_baseline.example.yaml` |
-| `inspect-task` | Show task metadata and list accessible files under `context/`. | `uv run dabench inspect-task task_1 --config configs/react_baseline.local.yaml` |
-| `run-task` | Run the baseline on one task and write outputs. | `uv run dabench run-task task_1 --config configs/react_baseline.local.yaml` |
-| `run-benchmark` | Run the baseline across the public dataset. | `uv run dabench run-benchmark --config configs/react_baseline.local.yaml` |
-| `score-run` | Score one run directory against the public demo `gold.csv` files. Defaults to the latest run when `run_id` is omitted. | `uv run dabench score-run 20260407T022447Z` |
+| Command           | Purpose                                                                                                                    | Example                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `status`        | Show project paths, config path, dataset root, and public task counts.                                                     | `uv run dabench status --config configs/react_baseline.example.yaml`            |
+| `inspect-task`  | Show task metadata and list accessible files under `context/`.                                                           | `uv run dabench inspect-task task_1 --config configs/react_baseline.example.yaml` |
+| `run-task`      | Run the baseline on one task and write outputs.                                                                            | `uv run dabench run-task task_1 --config configs/react_baseline.example.yaml`     |
+| `run-benchmark` | Run the baseline across the public dataset.                                                                                | `uv run dabench run-benchmark --config configs/react_baseline.example.yaml`       |
+| `score-run`     | Score one run directory against the public demo `gold.csv` files. Defaults to the latest run when `run_id` is omitted. | `uv run dabench score-run 20260407T022447Z`                                     |
 
 `run-benchmark` also supports `--limit N` to cap the number of tasks.
 Commands that execute tasks require `--config PATH`; `score-run` reads existing artifacts and does not need a config file.
 
-To avoid storing secrets in YAML, you can leave `agent.api_key` empty and configure `agent.api_key_env` instead. Example:
+To avoid storing secrets in YAML, you can leave `agent.api_key` empty and put the key name in `agent.api_key_env`. Example:
 
 ```yaml
 agent:
@@ -152,20 +149,22 @@ agent:
   temperature: 0.0
 ```
 
+Then create a project root `.env` file with the matching variable, for example `DEEPSEEK_API_KEY=...`.
+
 ## Tools
 
 The baseline exposes these tools to the model:
 
-| Tool | Purpose | Inputs |
-| --- | --- | --- |
-| `list_context` | List files and directories under `context/`. | `max_depth` |
-| `read_csv` | Read a CSV preview. | `path`, `max_rows` |
-| `read_json` | Read a JSON preview. | `path`, `max_chars` |
-| `read_doc` | Read a text document preview. | `path`, `max_chars` |
-| `inspect_sqlite_schema` | Inspect tables in a SQLite / DB file. | `path` |
-| `execute_context_sql` | Execute read-only SQL against a SQLite / DB file in `context/`. | `path`, `sql`, `limit` |
-| `execute_python` | Execute arbitrary Python code inside the task `context/` directory. | `code` |
-| `answer` | Submit the final answer table and terminate the task. | `columns`, `rows` |
+| Tool                      | Purpose                                                               | Inputs                       |
+| ------------------------- | --------------------------------------------------------------------- | ---------------------------- |
+| `list_context`          | List files and directories under `context/`.                        | `max_depth`                |
+| `read_csv`              | Read a CSV preview.                                                   | `path`, `max_rows`       |
+| `read_json`             | Read a JSON preview.                                                  | `path`, `max_chars`      |
+| `read_doc`              | Read a text document preview.                                         | `path`, `max_chars`      |
+| `inspect_sqlite_schema` | Inspect tables in a SQLite / DB file.                                 | `path`                     |
+| `execute_context_sql`   | Execute read-only SQL against a SQLite / DB file in `context/`.     | `path`, `sql`, `limit` |
+| `execute_python`        | Execute arbitrary Python code inside the task `context/` directory. | `code`                     |
+| `answer`                | Submit the final answer table and terminate the task.                 | `columns`, `rows`        |
 
 All file paths passed to tools must be relative to the task `context/` directory.
 
@@ -262,13 +261,13 @@ artifacts/runs/<run_id>/score.json
 
 ## Main Modules
 
-| Module | Responsibility |
-| --- | --- |
-| `src/data_agent_baseline/benchmark/dataset.py` | Public dataset loader |
-| `src/data_agent_baseline/tools/filesystem.py` | `list_context`, `read_csv`, `read_json`, `read_doc` |
-| `src/data_agent_baseline/tools/python_exec.py` | `execute_python` |
-| `src/data_agent_baseline/tools/sqlite.py` | `inspect_sqlite_schema`, `execute_context_sql` |
-| `src/data_agent_baseline/tools/registry.py` | Tool registration and terminal `answer` |
-| `src/data_agent_baseline/agents/prompt.py` | System prompt, task prompt, observation prompt |
-| `src/data_agent_baseline/agents/react.py` | ReAct runtime with JSON action protocol |
-| `src/data_agent_baseline/run/runner.py` | Single-task and benchmark execution |
+| Module                                           | Responsibility                                              |
+| ------------------------------------------------ | ----------------------------------------------------------- |
+| `src/data_agent_baseline/benchmark/dataset.py` | Public dataset loader                                       |
+| `src/data_agent_baseline/tools/filesystem.py`  | `list_context`, `read_csv`, `read_json`, `read_doc` |
+| `src/data_agent_baseline/tools/python_exec.py` | `execute_python`                                          |
+| `src/data_agent_baseline/tools/sqlite.py`      | `inspect_sqlite_schema`, `execute_context_sql`          |
+| `src/data_agent_baseline/tools/registry.py`    | Tool registration and terminal `answer`                   |
+| `src/data_agent_baseline/agents/prompt.py`     | System prompt, task prompt, observation prompt              |
+| `src/data_agent_baseline/agents/react.py`      | ReAct runtime with JSON action protocol                     |
+| `src/data_agent_baseline/run/runner.py`        | Single-task and benchmark execution                         |

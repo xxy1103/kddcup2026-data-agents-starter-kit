@@ -4,8 +4,8 @@ dataset:
 agent:
   model: YOUR_MODEL_NAME
   api_base: YOUR_API_BASE_URL
-  api_key: YOUR_API_KEY
-  api_key_env:
+  api_key: ""
+  api_key_env: YOUR_API_KEY_NAME
   max_steps: 16
   temperature: 0.0
   enable_thinking: false

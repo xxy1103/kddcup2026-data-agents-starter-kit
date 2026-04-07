@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -59,14 +58,39 @@ def _bool_value(raw_value: object, default_value: bool) -> bool:
     raise ValueError(f"Expected a boolean value, got: {raw_value!r}")
 
 
+def _dotenv_value(dotenv_path: Path, env_var_name: str) -> str | None:
+    if not dotenv_path.exists():
+        return None
+
+    for raw_line in dotenv_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        if "=" not in line:
+            continue
+
+        name, raw_value = line.split("=", 1)
+        if name.strip() != env_var_name:
+            continue
+
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        return value.strip()
+
+    return None
+
+
 def _resolve_api_key(raw_api_key: object, raw_api_key_env: object, default_api_key: str) -> tuple[str, str | None]:
     api_key = str(raw_api_key if raw_api_key is not None else default_api_key).strip()
     api_key_env = _optional_string_value(raw_api_key_env)
     if api_key or api_key_env is None:
         return api_key, api_key_env
 
-    env_api_key = os.getenv(api_key_env, "").strip()
-    return env_api_key, api_key_env
+    dotenv_api_key = _dotenv_value(PROJECT_ROOT / ".env", api_key_env)
+    return (dotenv_api_key or "").strip(), api_key_env
 
 
 # 运行时配置，包括输出目录、并发度和任务超时。

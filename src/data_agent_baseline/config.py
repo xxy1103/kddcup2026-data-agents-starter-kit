@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -58,6 +59,12 @@ def _bool_value(raw_value: object, default_value: bool) -> bool:
     raise ValueError(f"Expected a boolean value, got: {raw_value!r}")
 
 
+def _float_value(raw_value: object, default_value: float) -> float:
+    if raw_value is None:
+        return default_value
+    return float(raw_value)
+
+
 def _dotenv_value(dotenv_path: Path, env_var_name: str) -> str | None:
     if not dotenv_path.exists():
         return None
@@ -110,6 +117,22 @@ class AppConfig:
     run: RunConfig = field(default_factory=RunConfig)
 
 
+# 提交模式配置：沿用 AppConfig 复用运行逻辑，并额外挂载日志目录。
+@dataclass(frozen=True, slots=True)
+class SubmissionConfig:
+    app_config: AppConfig
+    log_dir: Path
+    parameter_config_path: Path | None = None
+
+    @property
+    def input_root(self) -> Path:
+        return self.app_config.dataset.root_path
+
+    @property
+    def output_dir(self) -> Path:
+        return self.app_config.run.output_dir
+
+
 # 把 YAML 中的路径字段解析成 Path；相对路径默认相对于项目根目录。
 def _path_value(raw_value: str | None, default_value: Path) -> Path:
     if not raw_value:
@@ -118,6 +141,130 @@ def _path_value(raw_value: str | None, default_value: Path) -> Path:
     if candidate.is_absolute():
         return candidate
     return (PROJECT_ROOT / candidate).resolve()
+
+
+def _submission_path_value(env_var_name: str, default_value: str) -> Path:
+    raw_value = os.environ.get(env_var_name, default_value).strip()
+    candidate = Path(raw_value)
+    if candidate.is_absolute():
+        return candidate
+    return candidate.resolve()
+
+
+def _required_env_value(env_var_name: str) -> str:
+    value = os.environ.get(env_var_name, "").strip()
+    if not value:
+        raise ValueError(f"Missing required environment variable: {env_var_name}")
+    return value
+
+
+def resolve_submission_log_dir_from_env() -> Path:
+    return _submission_path_value("DABENCH_LOG_ROOT", "/logs")
+
+
+def resolve_submission_parameter_config_path_from_env() -> Path | None:
+    explicit_path = _optional_string_value(os.environ.get("DABENCH_SUBMISSION_CONFIG"))
+    if explicit_path is not None:
+        resolved_path = _path_value(explicit_path, PROJECT_ROOT / "configs" / "submission.yaml")
+        if not resolved_path.is_file():
+            raise FileNotFoundError(f"Submission parameter config does not exist: {resolved_path}")
+        return resolved_path
+
+    default_path = PROJECT_ROOT / "configs" / "submission.yaml"
+    if default_path.is_file():
+        return default_path
+    return None
+
+
+def _load_submission_parameter_payload(config_path: Path | None) -> dict[str, object]:
+    if config_path is None:
+        return {}
+
+    payload = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(payload, dict):
+        raise ValueError("Submission parameter config must contain a YAML object at the top level.")
+
+    allowed_top_level_keys = {"agent", "run"}
+    unexpected_top_level_keys = set(payload) - allowed_top_level_keys
+    if unexpected_top_level_keys:
+        raise ValueError(
+            "Submission parameter config only supports top-level keys "
+            f"{sorted(allowed_top_level_keys)}, got {sorted(unexpected_top_level_keys)}."
+        )
+
+    agent_payload = payload.get("agent", {})
+    run_payload = payload.get("run", {})
+    if not isinstance(agent_payload, dict) or not isinstance(run_payload, dict):
+        raise ValueError("Submission parameter config sections `agent` and `run` must be YAML objects.")
+
+    allowed_agent_keys = {"max_steps", "temperature", "enable_thinking"}
+    allowed_run_keys = {"max_workers", "task_timeout_seconds"}
+    unexpected_agent_keys = set(agent_payload) - allowed_agent_keys
+    unexpected_run_keys = set(run_payload) - allowed_run_keys
+    if unexpected_agent_keys:
+        raise ValueError(
+            "Submission parameter config only supports non-sensitive `agent` keys "
+            f"{sorted(allowed_agent_keys)}, got {sorted(unexpected_agent_keys)}."
+        )
+    if unexpected_run_keys:
+        raise ValueError(
+            "Submission parameter config only supports non-sensitive `run` keys "
+            f"{sorted(allowed_run_keys)}, got {sorted(unexpected_run_keys)}."
+        )
+
+    return payload
+
+
+def load_submission_config_from_env() -> SubmissionConfig:
+    agent_defaults = AgentConfig()
+    run_defaults = RunConfig()
+
+    input_root = _submission_path_value("DABENCH_INPUT_ROOT", "/input")
+    output_root = _submission_path_value("DABENCH_OUTPUT_ROOT", "/output")
+    log_dir = resolve_submission_log_dir_from_env()
+    parameter_config_path = resolve_submission_parameter_config_path_from_env()
+    parameter_payload = _load_submission_parameter_payload(parameter_config_path)
+    agent_parameter_payload = parameter_payload.get("agent", {})
+    run_parameter_payload = parameter_payload.get("run", {})
+
+    if not input_root.is_dir():
+        raise FileNotFoundError(f"Submission input root does not exist: {input_root}")
+
+    agent_config = AgentConfig(
+        model=_required_env_value("MODEL_NAME"),
+        api_base=_required_env_value("MODEL_API_URL"),
+        api_key=_required_env_value("MODEL_API_KEY"),
+        api_key_env=None,
+        max_steps=int(os.environ.get("DABENCH_MAX_STEPS", agent_parameter_payload.get("max_steps", agent_defaults.max_steps))),
+        temperature=_float_value(
+            os.environ.get("DABENCH_TEMPERATURE", agent_parameter_payload.get("temperature")),
+            agent_defaults.temperature,
+        ),
+        enable_thinking=_bool_value(
+            os.environ.get("DABENCH_ENABLE_THINKING", agent_parameter_payload.get("enable_thinking")),
+            agent_defaults.enable_thinking,
+        ),
+    )
+    run_config = RunConfig(
+        output_dir=output_root,
+        run_id=None,
+        max_workers=int(os.environ.get("DABENCH_MAX_WORKERS", run_parameter_payload.get("max_workers", run_defaults.max_workers))),
+        task_timeout_seconds=int(
+            os.environ.get(
+                "DABENCH_TASK_TIMEOUT_SECONDS",
+                run_parameter_payload.get("task_timeout_seconds", run_defaults.task_timeout_seconds),
+            )
+        ),
+    )
+    return SubmissionConfig(
+        app_config=AppConfig(
+            dataset=DatasetConfig(root_path=input_root),
+            agent=agent_config,
+            run=run_config,
+        ),
+        log_dir=log_dir,
+        parameter_config_path=parameter_config_path,
+    )
 
 
 # 从 YAML 配置文件加载应用配置，并对缺省值和相对路径做统一处理。
@@ -145,7 +292,7 @@ def load_app_config(config_path: Path) -> AppConfig:
         api_key=api_key,
         api_key_env=api_key_env,
         max_steps=int(agent_payload.get("max_steps", agent_defaults.max_steps)),
-        temperature=float(agent_payload.get("temperature", agent_defaults.temperature)),
+        temperature=_float_value(agent_payload.get("temperature"), agent_defaults.temperature),
         enable_thinking=_bool_value(agent_payload.get("enable_thinking"), agent_defaults.enable_thinking),
     )
     raw_run_id = run_payload.get("run_id")

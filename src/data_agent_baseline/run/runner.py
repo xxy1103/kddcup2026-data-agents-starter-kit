@@ -85,7 +85,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 
 def _write_csv(path: Path, columns: list[str], rows: list[list[Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="") as handle:
+    with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
         writer.writerow(columns)
         for row in rows:
@@ -221,6 +221,23 @@ def _write_task_outputs(task_id: str, run_output_dir: Path, run_result: dict[str
     )
 
 
+# 公开的任务执行入口：负责运行单个任务并补齐端到端耗时，但不直接写盘。
+def execute_task(
+    *,
+    task_id: str,
+    config: AppConfig,
+    model=None,
+    tools: ToolRegistry | None = None,
+) -> dict[str, Any]:
+    started_at = perf_counter()
+    if model is None and tools is None:
+        run_result = _run_single_task_with_timeout(task_id=task_id, config=config)
+    else:
+        run_result = _run_single_task_core(task_id=task_id, config=config, model=model, tools=tools)
+    run_result["e2e_elapsed_seconds"] = round(perf_counter() - started_at, 3)
+    return run_result
+
+
 # 公开的单任务运行入口，负责端到端执行并记录总耗时。
 def run_single_task(
     *,
@@ -230,12 +247,7 @@ def run_single_task(
     model=None,
     tools: ToolRegistry | None = None,
 ) -> TaskRunArtifacts:
-    started_at = perf_counter()
-    if model is None and tools is None:
-        run_result = _run_single_task_with_timeout(task_id=task_id, config=config)
-    else:
-        run_result = _run_single_task_core(task_id=task_id, config=config, model=model, tools=tools)
-    run_result["e2e_elapsed_seconds"] = round(perf_counter() - started_at, 3)
+    run_result = execute_task(task_id=task_id, config=config, model=model, tools=tools)
     return _write_task_outputs(task_id, run_output_dir, run_result)
 
 

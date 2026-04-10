@@ -132,10 +132,12 @@ uv run dabench <command> [options]
 | `inspect-task`  | Show task metadata and list accessible files under `context/`.                                                           | `uv run dabench inspect-task task_1 --config configs/react_baseline.example.yaml` |
 | `run-task`      | Run the baseline on one task and write outputs.                                                                            | `uv run dabench run-task task_1 --config configs/react_baseline.example.yaml`     |
 | `run-benchmark` | Run the baseline across the public dataset.                                                                                | `uv run dabench run-benchmark --config configs/react_baseline.example.yaml`       |
+| `submit`        | Run the submission workflow that reads model credentials from env vars, non-sensitive parameters from `configs/submission.yaml`, and writes predictions plus logs to `DABENCH_OUTPUT_ROOT` / `/output` and `DABENCH_LOG_ROOT` / `/logs`. | `uv run dabench submit` |
 | `score-run`     | Evaluate one run with recall, redundancy, and multi-`λ` proxy scores against the public demo `gold.csv` files. Defaults to the latest run when `run_id` is omitted. | `uv run dabench score-run 20260407T022447Z --lambda 0.1 --lambda 0.3`          |
 
 `run-benchmark` also supports `--limit N` to cap the number of tasks.
 Commands that execute tasks require `--config PATH`; `score-run` reads existing artifacts and does not need a config file.
+The `submit` command does not accept a `--config` CLI option. Instead, it reads model credentials from environment variables and non-sensitive runtime parameters from `configs/submission.yaml` by default.
 
 To avoid storing secrets in YAML, you can leave `agent.api_key` empty and put the key name in `agent.api_key_env`. Example:
 
@@ -150,6 +152,96 @@ agent:
 ```
 
 Then create a project root `.env` file with the matching variable, for example `DEEPSEEK_API_KEY=...`.
+This `.env` fallback is development-only; `submit` ignores it for model credentials.
+
+## Submission Mode
+
+The repository now also exposes a stage-one submission entrypoint:
+
+```bash
+uv run dabench submit
+```
+
+`submit` is designed for the future Docker `ENTRYPOINT` path and uses two sources:
+
+- Required environment variables: `MODEL_API_URL`, `MODEL_API_KEY`, `MODEL_NAME`
+- Optional path environment variables: `DABENCH_INPUT_ROOT`, `DABENCH_OUTPUT_ROOT`, `DABENCH_LOG_ROOT`
+- Non-sensitive runtime parameters from `configs/submission.yaml` by default
+- Optional overrides via environment variables: `DABENCH_MAX_WORKERS`, `DABENCH_TASK_TIMEOUT_SECONDS`, `DABENCH_MAX_STEPS`, `DABENCH_TEMPERATURE`, `DABENCH_ENABLE_THINKING`
+
+When omitted, the submission paths default to `/input`, `/output`, and `/logs`.
+For local dry-runs before Docker packaging, point those path variables at ordinary directories on your machine.
+If you want to use a different parameter file, set `DABENCH_SUBMISSION_CONFIG=/path/to/submission.yaml`.
+
+The default submission parameter file is:
+
+```yaml
+agent:
+  max_steps: 16
+  temperature: 0.0
+  enable_thinking: false
+
+run:
+  max_workers: 4
+  task_timeout_seconds: 600
+```
+
+Only these non-sensitive fields are allowed in `submission.yaml`. Model URL, key, and name must still come from environment variables.
+
+## Docker Submission Simulation
+
+The repository now includes a root `Dockerfile` for local submission-style simulation.
+It keeps the source tree under `/app` and uses:
+
+```dockerfile
+ENTRYPOINT ["uv", "run", "dabench", "submit"]
+```
+
+Build the image from the project root:
+
+```powershell
+docker build -t team0042:v1 .
+```
+
+Prepare local bind-mount directories in PowerShell:
+
+```powershell
+$proj = "C:\Users\ulna\Desktop\kddcup\kddcup2026-data-agents-starter-kit"
+$inputDir = Join-Path $proj "data\public\input"
+$outputDir = Join-Path $proj "docker_sim\output"
+$logsDir = Join-Path $proj "docker_sim\logs"
+New-Item -ItemType Directory -Force $outputDir, $logsDir | Out-Null
+```
+
+Run the container with the same `/input`, `/output`, `/logs` contract used by the evaluation platform:
+
+```powershell
+docker run --rm `
+  --cpus=16 `
+  --memory=64g `
+  --memory-swap=64g `
+  -v "${inputDir}:/input:ro" `
+  -v "${outputDir}:/output:rw" `
+  -v "${logsDir}:/logs:rw" `
+  -e MODEL_API_URL="https://your-model-endpoint/v1" `
+  -e MODEL_API_KEY="your-api-key" `
+  -e MODEL_NAME="your-model-name" `
+  team0042:v1
+```
+
+Optional image export and reload:
+
+```powershell
+docker save -o team0042_v1.tar team0042:v1
+docker load -i team0042_v1.tar
+```
+
+Inspect the generated outputs and logs:
+
+```powershell
+Get-ChildItem $outputDir -Recurse
+Get-Content (Join-Path $logsDir "runtime.log") -Tail 100
+```
 
 ## Tools
 

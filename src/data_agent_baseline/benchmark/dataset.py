@@ -17,6 +17,13 @@ def _task_number(task_id: str) -> int:
     return int(task_id.removeprefix(TASK_DIR_PREFIX))
 
 
+def _task_sort_key(task_id: str) -> tuple[int, int | str]:
+    try:
+        return (0, _task_number(task_id))
+    except ValueError:
+        return (1, task_id)
+
+
 # 从 task.json 中加载任务元信息，并校验字段集合是否符合预期。
 def _load_task_record(task_json_path: Path) -> TaskRecord:
     payload = json.loads(task_json_path.read_text())
@@ -55,7 +62,8 @@ class DABenchPublicDataset:
             for path in self.root_dir.iterdir()
             if path.is_dir() and path.name.startswith(TASK_DIR_PREFIX)
         ]
-        task_dirs.sort(key=lambda path: _task_number(path.name))
+        # 优先按数值 task id 排序；如果不是纯数字后缀，则回退到字典序。
+        task_dirs.sort(key=lambda path: _task_sort_key(path.name))
         return task_dirs
 
     # 仅返回任务 ID 列表，适合状态展示等轻量场景。

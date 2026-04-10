@@ -15,7 +15,12 @@ from rich.progress import (
 from rich.table import Table
 
 from data_agent_baseline.benchmark.dataset import DABenchPublicDataset
-from data_agent_baseline.config import load_app_config
+from data_agent_baseline.config import (
+    load_app_config,
+    load_submission_config_from_env,
+    resolve_submission_log_dir_from_env,
+)
+from data_agent_baseline.run.submission import SubmissionLogger, run_submission
 from data_agent_baseline.run.runner import TaskRunArtifacts, create_run_output_dir, run_benchmark, run_single_task
 from data_agent_baseline.scoring import resolve_score_run_dir, score_run_outputs
 from data_agent_baseline.tools.filesystem import list_context_tree
@@ -270,6 +275,29 @@ def run_benchmark_command(
     console.print(f"Run output: {run_output_dir}")
     console.print(f"Tasks attempted: {len(artifacts)}")
     console.print(f"Succeeded tasks: {sum(1 for item in artifacts if item.succeeded)}")
+
+
+# 提交模式入口：只依赖环境变量，面向未来 Docker ENTRYPOINT 使用。
+@app.command("submit")
+def submit_command() -> None:
+    """Run the benchmark in submission mode with env-only configuration."""
+    logger = SubmissionLogger(resolve_submission_log_dir_from_env())
+    try:
+        submission_config = load_submission_config_from_env()
+    except (FileNotFoundError, ValueError) as exc:
+        logger.log("ERROR", f"Submission configuration error: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    try:
+        artifacts = run_submission(config=submission_config, logger=logger)
+    except Exception as exc:
+        logger.log("ERROR", f"Submission run failed: {exc}")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"Submission tasks attempted: {artifacts.task_count}")
+    console.print(f"Submission tasks succeeded: {artifacts.succeeded_task_count}")
+    console.print(f"Submission tasks failed: {artifacts.failed_task_count}")
+    console.print(f"Runtime log: {artifacts.runtime_log_path}")
 
 
 # 对某次 run 的 prediction.csv 按官方列匹配规则打分。

@@ -132,10 +132,12 @@ uv run dabench <command> [options]
 | `inspect-task`  | 查看任务元信息，并列出 `context/` 下可访问文件。                                          | `uv run dabench inspect-task task_1 --config configs/react_baseline.example.yaml` |
 | `run-task`      | 对单个任务运行 baseline，并写出结果。                                                       | `uv run dabench run-task task_1 --config configs/react_baseline.example.yaml`     |
 | `run-benchmark` | 批量运行整个公开数据集。                                                                    | `uv run dabench run-benchmark --config configs/react_baseline.example.yaml`       |
+| `submit`        | 运行提交工作流；模型凭证走环境变量、非敏感参数默认走 `configs/submission.yaml`，再把预测与日志分别写到 `DABENCH_OUTPUT_ROOT` / `/output` 和 `DABENCH_LOG_ROOT` / `/logs`。 | `uv run dabench submit` |
 | `score-run`     | 对某次运行目录按公开 demo `gold.csv` 做本地评测，输出 Recall、冗余率和多组 `λ` 代理分数；不传 `run_id` 时默认评分最新一次运行。 | `uv run dabench score-run 20260407T022447Z --lambda 0.1 --lambda 0.3`          |
 
 `run-benchmark` 还支持 `--limit N`，用于限制任务数量。
 涉及任务执行的命令需要传 `--config PATH`；`score-run` 直接读取已有产物，不需要配置文件。
+`submit` 不接受 `--config` 这种 CLI 配置参数；它会从环境变量读取模型凭证，并默认从 `configs/submission.yaml` 读取非敏感运行参数。
 
 如果你想把密钥放在 `.env` 中，可以在项目根目录创建 `.env`，并在配置里写入对应变量名。例如：
 
@@ -150,6 +152,96 @@ agent:
 ```
 
 然后在项目根目录 `.env` 中写入 `DEEPSEEK_API_KEY=...`。
+这套 `.env` 回退仅用于开发模式；`submit` 在模型凭证上会忽略 `.env`。
+
+## 提交模式
+
+仓库现在还提供了一个阶段一提交入口：
+
+```bash
+uv run dabench submit
+```
+
+`submit` 面向后续 Docker `ENTRYPOINT` 路径，参数来源分成两部分：
+
+- 必需环境变量：`MODEL_API_URL`、`MODEL_API_KEY`、`MODEL_NAME`
+- 可选路径环境变量：`DABENCH_INPUT_ROOT`、`DABENCH_OUTPUT_ROOT`、`DABENCH_LOG_ROOT`
+- 默认从 `configs/submission.yaml` 读取的非敏感运行参数
+- 可被环境变量覆盖的调优项：`DABENCH_MAX_WORKERS`、`DABENCH_TASK_TIMEOUT_SECONDS`、`DABENCH_MAX_STEPS`、`DABENCH_TEMPERATURE`、`DABENCH_ENABLE_THINKING`
+
+未显式设置时，提交路径默认使用 `/input`、`/output`、`/logs`。
+如果你想在 Docker 打包前先本地演练，可以把这些路径变量指向机器上的普通目录。
+如果想改用别的参数文件，可以设置 `DABENCH_SUBMISSION_CONFIG=/path/to/submission.yaml`。
+
+默认的提交参数文件内容如下：
+
+```yaml
+agent:
+  max_steps: 16
+  temperature: 0.0
+  enable_thinking: false
+
+run:
+  max_workers: 4
+  task_timeout_seconds: 600
+```
+
+`submission.yaml` 只允许这些非敏感字段，模型 URL、密钥和模型名仍然必须来自环境变量。
+
+## Docker 提交环境模拟
+
+仓库根目录现在包含一个 `Dockerfile`，用于本地模拟提交环境。
+镜像会保留 `/app` 下的源码目录，并固定使用：
+
+```dockerfile
+ENTRYPOINT ["uv", "run", "dabench", "submit"]
+```
+
+在项目根目录构建镜像：
+
+```powershell
+docker build -t team0042:v1 .
+```
+
+用 PowerShell 准备本地挂载目录：
+
+```powershell
+$proj = "C:\Users\ulna\Desktop\kddcup\kddcup2026-data-agents-starter-kit"
+$inputDir = Join-Path $proj "data\public\input"
+$outputDir = Join-Path $proj "docker_sim\output"
+$logsDir = Join-Path $proj "docker_sim\logs"
+New-Item -ItemType Directory -Force $outputDir, $logsDir | Out-Null
+```
+
+按评测平台同样的 `/input`、`/output`、`/logs` 约定启动容器：
+
+```powershell
+docker run --rm `
+  --cpus=16 `
+  --memory=64g `
+  --memory-swap=64g `
+  -v "${inputDir}:/input:ro" `
+  -v "${outputDir}:/output:rw" `
+  -v "${logsDir}:/logs:rw" `
+  -e MODEL_API_URL="https://your-model-endpoint/v1" `
+  -e MODEL_API_KEY="your-api-key" `
+  -e MODEL_NAME="your-model-name" `
+  team0042:v1
+```
+
+可选的镜像导出与回载：
+
+```powershell
+docker save -o team0042_v1.tar team0042:v1
+docker load -i team0042_v1.tar
+```
+
+查看输出与日志：
+
+```powershell
+Get-ChildItem $outputDir -Recurse
+Get-Content (Join-Path $logsDir "runtime.log") -Tail 100
+```
 
 ## Tools
 

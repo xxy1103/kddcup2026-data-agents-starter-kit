@@ -132,7 +132,7 @@ uv run dabench <command> [options]
 | `inspect-task`  | Show task metadata and list accessible files under `context/`.                                                           | `uv run dabench inspect-task task_1 --config configs/react_baseline.example.yaml` |
 | `run-task`      | Run the baseline on one task and write outputs.                                                                            | `uv run dabench run-task task_1 --config configs/react_baseline.example.yaml`     |
 | `run-benchmark` | Run the baseline across the public dataset.                                                                                | `uv run dabench run-benchmark --config configs/react_baseline.example.yaml`       |
-| `score-run`     | Score one run directory against the public demo `gold.csv` files. Defaults to the latest run when `run_id` is omitted. | `uv run dabench score-run 20260407T022447Z`                                     |
+| `score-run`     | Evaluate one run with recall, redundancy, and multi-`λ` proxy scores against the public demo `gold.csv` files. Defaults to the latest run when `run_id` is omitted. | `uv run dabench score-run 20260407T022447Z --lambda 0.1 --lambda 0.3`          |
 
 `run-benchmark` also supports `--limit N` to cap the number of tasks.
 Commands that execute tasks require `--config PATH`; `score-run` reads existing artifacts and does not need a config file.
@@ -173,17 +173,20 @@ All file paths passed to tools must be relative to the task `context/` directory
 The repository now includes a local scoring command for the public demo set:
 
 ```bash
-uv run dabench score-run [run_id]
+uv run dabench score-run [run_id] [--lambda FLOAT ...]
 ```
 
 If `run_id` is omitted, the command scores the latest run directory under `artifacts/runs/`.
-The scorer compares `prediction.csv` with `data/public/output/task_<id>/gold.csv` using the official binary column-matching rule:
+The scorer compares `prediction.csv` with `data/public/output/task_<id>/gold.csv` using the updated official rules, but intentionally reports a local proxy evaluation instead of pretending to know the official hidden `λ`:
 
-- Each task receives only `0` or `1`.
+- Each task exposes both `recall` and `redundancy_rate`.
+- The CLI also reports multiple proxy scores using `recall - λ * redundancy_rate`.
+- The default local `λ` grid is `0.0, 0.05, 0.1, 0.2, 0.3, 0.5`.
 - Column names are ignored.
 - Each column is compared as an unordered value vector, so row order does not matter within a column.
-- Extra predicted columns are allowed.
-- A task scores `0` if any gold column is missing or its values do not match exactly.
+- Cell values are normalized before comparison: null aliases collapse to empty strings, numerics round to 2 decimals, dates normalize to ISO dates, and timezone-aware datetimes convert to UTC.
+- Name fields support both `first_name + last_name` and combined full-name columns.
+- The legacy binary view is still preserved as `full_cover_rate` / compatibility aliases `total_score` and `accuracy`.
 
 This local scorer only works for the public demo tasks because hidden test sets do not ship with `gold.csv`.
 
@@ -212,7 +215,10 @@ Scoring a run also writes:
 
 ```text
 artifacts/runs/<run_id>/score.json
+artifacts/runs/<run_id>/score_report.md
 ```
+
+`score.json` is the machine-readable summary, while `score_report.md` is a human-friendly Chinese report for review.
 
 ## Contact
 

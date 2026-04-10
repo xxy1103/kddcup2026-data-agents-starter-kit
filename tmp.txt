@@ -1,0 +1,3 @@
+uv run dabench run-benchmark --config configs/react_baseline.local.yaml
+uv run dabench run-task task_11 --config configs/react_baseline.local.yaml
+uv run dabench score-run

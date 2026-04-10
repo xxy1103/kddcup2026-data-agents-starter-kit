@@ -25,7 +25,6 @@ htmlcov/
 # Local data, docs, tests, and artifacts
 data/
 docs/
-tests/
 evaluation/
 artifacts/*
 !artifacts/.gitkeep

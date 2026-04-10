@@ -132,7 +132,7 @@ uv run dabench <command> [options]
 | `inspect-task`  | 查看任务元信息，并列出 `context/` 下可访问文件。                                          | `uv run dabench inspect-task task_1 --config configs/react_baseline.example.yaml` |
 | `run-task`      | 对单个任务运行 baseline，并写出结果。                                                       | `uv run dabench run-task task_1 --config configs/react_baseline.example.yaml`     |
 | `run-benchmark` | 批量运行整个公开数据集。                                                                    | `uv run dabench run-benchmark --config configs/react_baseline.example.yaml`       |
-| `score-run`     | 对某次运行目录按公开 demo `gold.csv` 做本地评分；不传 `run_id` 时默认评分最新一次运行。 | `uv run dabench score-run 20260407T022447Z`                                     |
+| `score-run`     | 对某次运行目录按公开 demo `gold.csv` 做本地评测，输出 Recall、冗余率和多组 `λ` 代理分数；不传 `run_id` 时默认评分最新一次运行。 | `uv run dabench score-run 20260407T022447Z --lambda 0.1 --lambda 0.3`          |
 
 `run-benchmark` 还支持 `--limit N`，用于限制任务数量。
 涉及任务执行的命令需要传 `--config PATH`；`score-run` 直接读取已有产物，不需要配置文件。
@@ -173,17 +173,20 @@ agent:
 仓库现在提供了一个面向公开 demo 的本地评分命令：
 
 ```bash
-uv run dabench score-run [run_id]
+uv run dabench score-run [run_id] [--lambda FLOAT ...]
 ```
 
 如果不传 `run_id`，命令会默认评分 `artifacts/runs/` 下名字最新的一次运行目录。
-评分会把 `prediction.csv` 与 `data/public/output/task_<id>/gold.csv` 按官方二元列匹配规则进行比较：
+评分会把 `prediction.csv` 与 `data/public/output/task_<id>/gold.csv` 按新版官方规则进行比较，但本地不会假装知道官方未公开的唯一 `λ`，而是输出代理评测结果：
 
-- 每道题只有 `0` 或 `1` 两种得分，没有部分分。
+- 每道题都会输出 `recall` 和 `redundancy_rate` 两个核心指标。
+- CLI 还会输出多组 `recall - λ * redundancy_rate` 代理分数。
+- 默认本地 `λ` 网格为 `0.0, 0.05, 0.1, 0.2, 0.3, 0.5`。
 - 评分时忽略列名。
 - 每一列按“无序值向量”比较，因此列内行顺序不影响得分。
-- 允许预测结果包含额外列。
-- 只要标准答案中的任意一列缺失，或该列的数据值不完全匹配，该题就记 `0`。
+- 比较前会先做值规范化：空值别名归一为空字符串、数值四舍五入到两位小数、日期转 ISO 日期、带时区的 datetime 转 UTC。
+- name field 同时支持 `first_name + last_name` 两列形式和单列 full name 形式。
+- 旧的二元视角仍保留为 `full_cover_rate`，并兼容输出 `total_score` / `accuracy` 两个历史字段。
 
 这个本地评分器只适用于公开 demo 任务，因为 hidden test 不提供 `gold.csv`。
 
@@ -212,7 +215,10 @@ artifacts/runs/<run_id>/summary.json
 
 ```text
 artifacts/runs/<run_id>/score.json
+artifacts/runs/<run_id>/score_report.md
 ```
+
+其中 `score.json` 面向程序消费，`score_report.md` 是便于人工复盘的中文评测报告。
 
 ## Contact
 

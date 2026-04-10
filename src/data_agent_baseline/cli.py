@@ -279,11 +279,20 @@ def score_run_command(
         None,
         help="Optional run directory name under artifacts/runs. Latest run is used when omitted.",
     ),
+    lambda_values: list[float] | None = typer.Option(
+        None,
+        "--lambda",
+        help="Optional proxy lambda values. Repeat the flag to evaluate multiple lambda settings.",
+    ),
 ) -> None:
-    """Score one run directory against the public demo gold.csv files."""
+    """Score one run directory with recall, redundancy, and multi-lambda proxy metrics."""
     try:
         effective_run_id, run_output_dir = resolve_score_run_dir(ARTIFACT_RUNS_DIR, run_id=run_id)
-        summary = score_run_outputs(run_output_dir=run_output_dir, gold_root=PUBLIC_GOLD_DIR)
+        summary = score_run_outputs(
+            run_output_dir=run_output_dir,
+            gold_root=PUBLIC_GOLD_DIR,
+            lambda_values=lambda_values,
+        )
     except (ValueError, FileNotFoundError) as exc:
         raise typer.BadParameter(str(exc), param_hint="run_id") from exc
 
@@ -294,19 +303,31 @@ def score_run_command(
     summary_table.add_row("run_output", str(run_output_dir))
     summary_table.add_row("public_gold_dir", str(PUBLIC_GOLD_DIR))
     summary_table.add_row("task_count", str(summary.task_count))
-    summary_table.add_row("total_score", str(summary.total_score))
-    summary_table.add_row("accuracy", f"{summary.accuracy:.4f}")
+    summary_table.add_row("prediction_task_count", str(summary.prediction_task_count))
+    summary_table.add_row("full_cover_count", str(summary.full_cover_count))
+    summary_table.add_row("full_cover_rate", f"{summary.full_cover_rate:.4f}")
+    summary_table.add_row("mean_recall", f"{summary.mean_recall:.4f}")
+    summary_table.add_row("mean_redundancy_rate", f"{summary.mean_redundancy_rate:.4f}")
+    summary_table.add_row("compat_total_score", str(summary.total_score))
+    summary_table.add_row("compat_accuracy", f"{summary.accuracy:.4f}")
     summary_table.add_row("score_json", str(summary.score_path))
+    summary_table.add_row("score_report", str(summary.score_report_path))
     console.print(summary_table)
 
-    failed_tasks = [task for task in summary.tasks if task.score == 0]
-    if failed_tasks:
-        failed_table = Table(title="Incorrect Tasks")
-        failed_table.add_column("Task")
-        failed_table.add_column("Reason")
-        for task in failed_tasks:
-            failed_table.add_row(task.task_id, task.reason or "Unknown scoring failure.")
-        console.print(failed_table)
+    proxy_table = Table(title="Proxy Scores (Recall - λ * Redundancy)")
+    proxy_table.add_column("λ")
+    proxy_table.add_column("score")
+    for label, score in summary.proxy_scores.items():
+        proxy_table.add_row(label, f"{score:.4f}")
+    console.print(proxy_table)
+
+    if summary.failure_breakdown:
+        failure_table = Table(title="Failure Breakdown")
+        failure_table.add_column("Failure")
+        failure_table.add_column("Count")
+        for reason, count in summary.failure_breakdown.items():
+            failure_table.add_row(reason, str(count))
+        console.print(failure_table)
 
 
 # 供 pyproject 或脚本入口直接调用的主函数。
